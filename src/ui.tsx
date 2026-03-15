@@ -186,9 +186,7 @@ function LanguageCard({
       className="relative h-[130px] w-[100px] shrink-0 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15"
     >
       <div
-        className={`relative z-10 flex h-full flex-col items-center gap-1 overflow-hidden rounded-[8px] bg-white pb-2 [backface-visibility:hidden] [transform:translateZ(0)] ${
-          selected ? 'border-x border-b border-[#f0f0f0]' : 'border-x border-b border-transparent'
-        }`}
+        className="relative z-10 flex h-full flex-col items-center gap-1 overflow-hidden rounded-[8px] border border-input bg-white pb-2 [backface-visibility:hidden] [transform:translateZ(0)]"
         style={{ clipPath: 'inset(0 round 8px)' }}
       >
         <div
