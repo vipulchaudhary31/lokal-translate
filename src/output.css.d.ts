@@ -1879,10 +1879,18 @@ declare const styles: {
   readonly "max-h-96": string;
   readonly "max-h-[280px]": string;
   readonly "max-h-[300px]": string;
+  readonly "max-h-[360px]": string;
+  readonly "max-h-[60px]": string;
+  readonly "max-h-[62px]": string;
+  readonly "max-h-[64px]": string;
+  readonly "max-h-[66px]": string;
   readonly "max-h-[72px]": string;
   readonly "max-h-[80px]": string;
   readonly "max-h-[85vh]": string;
   readonly "max-w-(--skeleton-width)": string;
+  readonly "max-w-[62px]": string;
+  readonly "max-w-[64px]": string;
+  readonly "max-w-[66px]": string;
   readonly "max-w-[calc(100%-2rem)]": string;
   readonly "max-w-max": string;
   readonly "max-w-none": string;
@@ -1995,6 +2003,7 @@ declare const styles: {
   readonly "pl-8": string;
   readonly "placeholder:text-muted-foreground": string;
   readonly "pointer-events-none": string;
+  readonly "pr-1": string;
   readonly "pr-2": string;
   readonly "pr-2.5": string;
   readonly "pr-8": string;
@@ -2546,6 +2555,7 @@ declare const styles: {
   readonly "rounded-xs": string;
   readonly "row-span-2": string;
   readonly "row-start-1": string;
+  readonly "scale-[1.02]": string;
   readonly "scroll-my-1": string;
   readonly "scroll-py-1": string;
   readonly "select-none": string;
@@ -2611,6 +2621,7 @@ declare const styles: {
   readonly "tabular-nums": string;
   readonly "text-2xl": string;
   readonly "text-[#171717]": string;
+  readonly "text-[#C7CDD8]": string;
   readonly "text-[#cc9a54]": string;
   readonly "text-[0.8rem]": string;
   readonly "text-[10px]": string;
@@ -2618,6 +2629,7 @@ declare const styles: {
   readonly "text-[13px]": string;
   readonly "text-[14px]": string;
   readonly "text-[16px]": string;
+  readonly "text-[28px]": string;
   readonly "text-[32px]": string;
   readonly "text-[34px]": string;
   readonly "text-[rgba(23,23,23,0.65)]": string;
@@ -2997,6 +3009,7 @@ declare const styles: {
   readonly "top-[calc(50%-9.7px)]": string;
   readonly "top-full": string;
   readonly "touch-none": string;
+  readonly "tracking-[-0.04em]": string;
   readonly "tracking-normal": string;
   readonly "tracking-tight": string;
   readonly "tracking-widest": string;

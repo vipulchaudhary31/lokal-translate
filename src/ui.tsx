@@ -22,13 +22,12 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  Sun,
-  Moon,
   Settings2,
   Search,
   X,
   Check,
   Link2,
+  ArrowLeft,
 } from 'lucide-react'
 import bengaliCardImage from '../assets/bengali.png'
 import gujaratiCardImage from '../assets/gujarati.png'
@@ -39,31 +38,6 @@ import punjabiCardImage from '../assets/punjabi.png'
 import selectedBgImage from '../assets/selected_bg_image.png'
 import tamilCardImage from '../assets/tamil.png'
 import teluguCardImage from '../assets/telugu.png'
-
-const THEME_KEY = 'ai-translate-theme'
-
-function useTheme() {
-  const [isDark, setIsDark] = React.useState(() => {
-    if (typeof document === 'undefined') return false
-    try {
-      const saved = localStorage.getItem(THEME_KEY)
-      return saved === 'dark'
-    } catch { return false }
-  })
-
-  React.useEffect(() => {
-    const root = document.documentElement
-    if (isDark) {
-      root.classList.add('dark')
-      try { localStorage.setItem(THEME_KEY, 'dark') } catch {}
-    } else {
-      root.classList.remove('dark')
-      try { localStorage.setItem(THEME_KEY, 'light') } catch {}
-    }
-  }, [isDark])
-
-  return { isDark, setIsDark }
-}
 
 type LanguageArt =
   | { kind: 'emoji'; value: string }
@@ -524,8 +498,7 @@ function StatusMessage({ message }: { message: string }) {
 }
 
 function Plugin() {
-  const { isDark, setIsDark } = useTheme()
-  const [targetLanguage, setTargetLanguage] = React.useState('hi')
+  const [targetLanguage, setTargetLanguage] = React.useState('gu')
   const [isTranslating, setIsTranslating] = React.useState(false)
   const [status, setStatus] = React.useState<string | null>(null)
   const [assumeEnglish, setAssumeEnglish] = React.useState(true)
@@ -545,7 +518,7 @@ function Plugin() {
   const [fontsLoading, setFontsLoading] = React.useState(false)
   const [fontPickerForLang, setFontPickerForLang] = React.useState<string | null>(null)
   const [fontSwapPicker, setFontSwapPicker] = React.useState<'target' | null>(null)
-  const [showFontPrefs, setShowFontPrefs] = React.useState(false)
+  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs'>('translate')
   const [styleMappingModalLang, setStyleMappingModalLang] = React.useState<string | null>(null)
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
   const [sourceStyles, setSourceStyles] = React.useState<Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>>([])
@@ -668,7 +641,6 @@ function Plugin() {
           break
         case 'font-prefs-saved':
           setFontPrefs(msg.fontPrefs && typeof msg.fontPrefs === 'object' ? msg.fontPrefs : {})
-          setShowFontPrefs(false)
           break
         case 'styles-for-font-loaded':
           setAvailableStyles(Array.isArray(msg.styles) ? msg.styles : [])
@@ -740,91 +712,251 @@ function Plugin() {
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
-      {/* Main content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="px-5 py-4">
-          <Tabs defaultValue="translate" className="w-full space-y-4">
-            <div className="flex items-center gap-2">
-              <TabsList className="flex-1 h-9 p-0.5 rounded-lg bg-muted">
-              <TabsTrigger value="translate" className="flex-1 gap-2 rounded-md text-sm font-medium">
-                <Languages className="h-4 w-4" />
-                Translate
-              </TabsTrigger>
-              <TabsTrigger value="font-swap" className="flex-1 gap-2 rounded-md text-sm font-medium">
-                <Type className="h-4 w-4" />
-                Font Swap
-              </TabsTrigger>
-            </TabsList>
-              <button
-                type="button"
-                onClick={() => setIsDark(!isDark)}
-                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </button>
-            </div>
-
-            <TabsContent value="translate" className="mt-0 space-y-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground">Translate to</Label>
-                <div className="-mx-5 overflow-x-auto px-5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <div className="flex w-max gap-5">
-                    {languageOptions.map(option => (
-                      <LanguageCard
-                        key={option.value}
-                        option={option}
-                        selected={targetLanguage === option.value}
-                        onSelect={setTargetLanguage}
-                      />
-                    ))}
+          <div className="space-y-4">
+            {page === 'translate' || page === 'fontSwap' ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-6">
+                    <button
+                      type="button"
+                      onClick={() => setPage('translate')}
+                      className={`text-[28px] leading-none tracking-[-0.04em] transition-colors ${
+                        page === 'translate' ? 'font-semibold text-foreground' : 'font-medium text-[#C7CDD8]'
+                      }`}
+                    >
+                      Translate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage('fontSwap')}
+                      className={`text-[28px] leading-none tracking-[-0.04em] transition-colors ${
+                        page === 'fontSwap' ? 'font-semibold text-foreground' : 'font-medium text-[#C7CDD8]'
+                      }`}
+                    >
+                      Swap
+                    </button>
                   </div>
-                </div>
-              </div>
-
-              <div className="space-y-2.5">
-                <label className="flex cursor-pointer items-center gap-2.5">
-                  <Checkbox checked={assumeEnglish} onCheckedChange={(c) => setAssumeEnglish(c === true)} />
-                  <span className="text-sm text-foreground select-none">Assume source is English (faster, fewer API calls)</span>
-                </label>
-              </div>
-
-              <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
-                {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : 'Translate Selection'}
-              </Button>
-
-              <Separator className="my-2" />
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 flex-1 h-9 rounded-md border border-border bg-card hover:bg-muted/50 text-sm font-medium px-3"
-                  onClick={() => setShowFontPrefs(!showFontPrefs)}
-                >
-                  <Type className="h-4 w-4 shrink-0" />
-                  {showFontPrefs ? 'Hide font preferences' : 'Font preferences (per language)'}
-                </button>
-                {showFontPrefs && (
                   <button
                     type="button"
-                    className="shrink-0 h-9 px-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={() => setShowFontPrefs(false)}
-                    aria-label="Close"
+                    onClick={() => setPage('fontPrefs')}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Open font preferences"
+                    title="Font preferences"
+                  >
+                    <Type className="h-4 w-4" />
+                  </button>
+                </div>
+                {page === 'translate' ? (
+                  <>
+                    <div className="-mx-5 overflow-x-auto px-5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex w-max gap-5">
+                        {languageOptions.map(option => (
+                          <LanguageCard
+                            key={option.value}
+                            option={option}
+                            selected={targetLanguage === option.value}
+                            onSelect={setTargetLanguage}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <label className="flex cursor-pointer items-center gap-2.5">
+                        <Checkbox checked={assumeEnglish} onCheckedChange={(c) => setAssumeEnglish(c === true)} />
+                        <span className="text-sm text-foreground select-none">Assume source is English (faster, fewer API calls)</span>
+                      </label>
+                    </div>
+
+                    <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
+                      {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : 'Translate Selection'}
+                    </Button>
+
+                    <Separator className="my-2" />
+
+                    {showBulkSetup ? (
+                      <Card className="rounded-lg border border-border bg-card shadow-sm">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Select bulk translate languages</span>
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => setShowBulkSetup(false)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">Choose which languages to translate into. Source: English only.</p>
+                          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                            {bulkLanguageOptions.map(o => (
+                              <label key={o.value} className="flex cursor-pointer items-center gap-2">
+                                <Checkbox
+                                  checked={bulkSetupSelection.includes(o.value)}
+                                  onCheckedChange={() => toggleBulkLang(o.value)}
+                                />
+                                <span className="text-xs">{o.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <Button
+                            className="w-full h-9 rounded-md text-sm"
+                            disabled={bulkSetupSelection.length === 0}
+                            onClick={handleBulkSetupSave}
+                          >
+                            Save & use {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1 h-9 rounded-md text-sm font-medium"
+                            disabled={isTranslating}
+                            onClick={handleBulkStressTest}
+                          >
+                            {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : (bulkLanguages && bulkLanguages.length > 0 ? `Bulk Translate (${bulkLanguages.length} languages)` : 'Set up bulk translate')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-md"
+                            disabled={isTranslating}
+                            onClick={() => {
+                              setBulkSetupSelection(bulkLanguages && bulkLanguages.length > 0 ? bulkLanguages : bulkLanguageOptions.map(o => o.value))
+                              setShowBulkSetup(true)
+                            }}
+                            title="Edit languages"
+                          >
+                            <Settings2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {bulkLanguages && bulkLanguages.length > 0
+                            ? `Duplicates frames and translates to: ${bulkLanguages.map(c => bulkLanguageOptions.find(o => o.value === c)?.label || c).join(', ')}. Source: English only.`
+                            : 'Click to set up your preferred languages, then run. Source: English only.'}
+                        </p>
+                      </>
+                    )}
+
+                    {status && <StatusMessage message={status} />}
+
+                    {showWeightMappings && weightMappingInfo.length > 0 && (
+                      <Card className="rounded-lg border border-border bg-card shadow-sm">
+                        <CardContent className="p-3">
+                          <button className="flex w-full items-center justify-between" onClick={() => setShowWeightMappings(false)}>
+                            <span className="text-xs font-medium text-foreground">Weight Mappings ({weightMappingInfo.length})</span>
+                            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                          </button>
+                          <div className="mt-2 max-h-20 overflow-y-auto space-y-1">
+                            {weightMappingInfo.map((m, i) => (
+                              <p key={i} className="text-xs font-mono text-muted-foreground leading-relaxed">{m}</p>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Translations are cached (24h) to reduce API costs. Duplicate text is translated once. <span className="font-medium text-foreground">&quot;hing&quot;</span> = transliteration; <span className="font-medium text-foreground">&quot;dnd&quot;</span> = preserve text & font.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                        onClick={() => parent.postMessage({ pluginMessage: { type: 'clear-cache' } }, '*')}
+                      >
+                        Clear translation cache
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                        onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
+                      >
+                        Hard reset
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Card className="rounded-lg border border-border bg-card shadow-sm">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-muted-foreground">Convert to font</Label>
+                          <button
+                            type="button"
+                            className="w-full flex items-center justify-between gap-2 h-9 px-3 rounded-md border border-input bg-background text-left text-sm truncate hover:bg-muted transition-colors"
+                            onClick={() => openFontSwapPicker()}
+                            disabled={isSwapping}
+                          >
+                            <span className="truncate">{targetFont}</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <label className="flex cursor-pointer items-center gap-2.5">
+                      <Checkbox checked={applyFontStyles} onCheckedChange={(c) => setApplyFontStyles(c === true)} />
+                      <span className="text-sm text-foreground select-none">Auto-apply font styles (Non-Telugu)</span>
+                    </label>
+
+                    <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isSwapping} onClick={handleFontSwap}>
+                      {isSwapping ? <><Loader2 className="h-4 w-4 animate-spin" /> Converting…</> : `Convert selection to ${targetFont}`}
+                    </Button>
+
+                    {swapStatus && <StatusMessage message={swapStatus} />}
+
+                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Select text layers, choose a font, and convert. All selected text gets the new font; weights are preserved when possible.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage('translate')}
+                    className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setPage('translate')}
+                    aria-label="Close font preferences"
                   >
                     <X className="h-4 w-4" />
                   </button>
-                )}
-              </div>
-              {showFontPrefs && (
+                </div>
+
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Font preferences</h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    Choose a preferred font per language. If a font is unavailable, the plugin falls back to its default.
+                  </p>
+                </div>
+
                 <Card className="rounded-lg border border-border bg-card shadow-sm">
                   <CardContent className="p-4 space-y-3">
-                    <p className="text-[11px] text-muted-foreground">
-                      Choose a font for each language. If unavailable, the default is used (e.g. Noto Sans Devanagari UI for Marathi).
-                    </p>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                       {languageOptions.map(o => (
                         <div key={o.value} className="flex items-center gap-2">
-                          <span className="text-xs truncate w-20">{o.label.split(' ')[0]}</span>
+                          <span className="text-xs truncate w-20">{o.label}</span>
                           <button
                             type="button"
                             className="flex-1 min-w-0 h-8 px-2.5 rounded-md border border-input bg-background text-left text-xs truncate hover:bg-muted"
@@ -849,197 +981,51 @@ function Plugin() {
                     >
                       Save font preferences
                     </Button>
-
-                    <StyleMappingModal
-                      open={styleMappingModalLang !== null}
-                      onClose={() => setStyleMappingModalLang(null)}
-                      lang={styleMappingModalLang || ''}
-                      langLabel={languageOptions.find(o => o.value === styleMappingModalLang)?.label || ''}
-                      fontForLang={effectiveFontForLang(styleMappingModalLang || '')}
-                      availableStyles={availableStyles}
-                      sourceStyles={sourceStyles}
-                      styleMappings={styleMappings}
-                      onMappingChange={(lang, key, value) => {
-                        setStyleMappings(prev => ({
-                          ...prev,
-                          [lang]: { ...(prev[lang] || {}), [key]: value }
-                        }))
-                      }}
-                      onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
-                    />
                   </CardContent>
                 </Card>
-              )}
-
-              {showBulkSetup ? (
-                <Card className="rounded-lg border border-border bg-card shadow-sm">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Select bulk translate languages</span>
-                      <button
-                        type="button"
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setShowBulkSetup(false)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">Choose which languages to translate into. Source: English only.</p>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                      {bulkLanguageOptions.map(o => (
-                        <label key={o.value} className="flex cursor-pointer items-center gap-2">
-                          <Checkbox
-                            checked={bulkSetupSelection.includes(o.value)}
-                            onCheckedChange={() => toggleBulkLang(o.value)}
-                          />
-                          <span className="text-xs">{o.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <Button
-                      className="w-full h-9 rounded-md text-sm"
-                      disabled={bulkSetupSelection.length === 0}
-                      onClick={handleBulkSetupSave}
-                    >
-                      Save & use {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1 h-9 rounded-md text-sm font-medium"
-                      disabled={isTranslating}
-                      onClick={handleBulkStressTest}
-                    >
-                      {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : (bulkLanguages && bulkLanguages.length > 0 ? `Bulk Translate (${bulkLanguages.length} languages)` : 'Set up bulk translate')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-md"
-                      disabled={isTranslating}
-                      onClick={() => {
-                        setBulkSetupSelection(bulkLanguages && bulkLanguages.length > 0 ? bulkLanguages : bulkLanguageOptions.map(o => o.value))
-                        setShowBulkSetup(true)
-                      }}
-                      title="Edit languages"
-                    >
-                      <Settings2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    {bulkLanguages && bulkLanguages.length > 0
-                      ? `Duplicates frames and translates to: ${bulkLanguages.map(c => bulkLanguageOptions.find(o => o.value === c)?.label || c).join(', ')}. Source: English only.`
-                      : 'Click to set up your preferred languages, then run. Source: English only.'}
-                  </p>
-                </>
-              )}
-
-              {status && <StatusMessage message={status} />}
-
-              {showWeightMappings && weightMappingInfo.length > 0 && (
-                <Card className="rounded-lg border border-border bg-card shadow-sm">
-                  <CardContent className="p-3">
-                    <button className="flex w-full items-center justify-between" onClick={() => setShowWeightMappings(false)}>
-                      <span className="text-xs font-medium text-foreground">Weight Mappings ({weightMappingInfo.length})</span>
-                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                    <div className="mt-2 max-h-20 overflow-y-auto space-y-1">
-                      {weightMappingInfo.map((m, i) => (
-                        <p key={i} className="text-xs font-mono text-muted-foreground leading-relaxed">{m}</p>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Translations are cached (24h) to reduce API costs. Duplicate text is translated once. <span className="font-medium text-foreground">&quot;hing&quot;</span> = transliteration; <span className="font-medium text-foreground">&quot;dnd&quot;</span> = preserve text & font.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  type="button"
-                  className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                  onClick={() => parent.postMessage({ pluginMessage: { type: 'clear-cache' } }, '*')}
-                >
-                  Clear translation cache
-                </button>
-                <button
-                  type="button"
-                  className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                  onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
-                >
-                  Hard reset
-                </button>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="font-swap" className="mt-0 space-y-4">
-              <Card className="rounded-lg border border-border bg-card shadow-sm">
-                <CardContent className="p-4 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-muted-foreground">Convert to font</Label>
-                    <button
-                      type="button"
-                      className="w-full flex items-center justify-between gap-2 h-9 px-3 rounded-md border border-input bg-background text-left text-sm truncate hover:bg-muted transition-colors"
-                      onClick={() => openFontSwapPicker()}
-                      disabled={isSwapping}
-                    >
-                      <span className="truncate">{targetFont}</span>
-                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <label className="flex cursor-pointer items-center gap-2.5">
-                <Checkbox checked={applyFontStyles} onCheckedChange={(c) => setApplyFontStyles(c === true)} />
-                <span className="text-sm text-foreground select-none">Auto-apply font styles (Non-Telugu)</span>
-              </label>
-
-              <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isSwapping} onClick={handleFontSwap}>
-                {isSwapping ? <><Loader2 className="h-4 w-4 animate-spin" /> Converting…</> : `Convert selection to ${targetFont}`}
-              </Button>
-
-              {swapStatus && <StatusMessage message={swapStatus} />}
-
-              <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Select text layers, choose a font, and convert. All selected text gets the new font; weights are preserved when possible.
-                </p>
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          <FontPickerModal
-            open={fontPickerForLang !== null || fontSwapPicker !== null}
-            onClose={() => { setFontPickerForLang(null); setFontSwapPicker(null) }}
-            fonts={availableFonts}
-            currentFont={
-              fontSwapPicker === 'target' ? targetFont
-              : fontPickerForLang ? effectiveFontForLang(fontPickerForLang)
-              : ''
-            }
-            onSelect={font => {
-              if (fontSwapPicker === 'target') {
-                setTargetFont(font)
-              } else if (fontPickerForLang) {
-                setFontPrefs(p => ({ ...p, [fontPickerForLang]: font }))
-              }
-              setFontPickerForLang(null)
-              setFontSwapPicker(null)
-            }}
-            loading={fontsLoading}
-          />
+              </>
+            )}
+            <StyleMappingModal
+              open={styleMappingModalLang !== null}
+              onClose={() => setStyleMappingModalLang(null)}
+              lang={styleMappingModalLang || ''}
+              langLabel={languageOptions.find(o => o.value === styleMappingModalLang)?.label || ''}
+              fontForLang={effectiveFontForLang(styleMappingModalLang || '')}
+              availableStyles={availableStyles}
+              sourceStyles={sourceStyles}
+              styleMappings={styleMappings}
+              onMappingChange={(lang, key, value) => {
+                setStyleMappings(prev => ({
+                  ...prev,
+                  [lang]: { ...(prev[lang] || {}), [key]: value }
+                }))
+              }}
+              onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
+            />
+          </div>
         </div>
       </div>
+
+      <FontPickerModal
+        open={fontPickerForLang !== null || fontSwapPicker !== null}
+        onClose={() => { setFontPickerForLang(null); setFontSwapPicker(null) }}
+        fonts={availableFonts}
+        currentFont={
+          fontSwapPicker === 'target' ? targetFont
+          : fontPickerForLang ? effectiveFontForLang(fontPickerForLang)
+          : ''
+        }
+        onSelect={font => {
+          if (fontSwapPicker === 'target') {
+            setTargetFont(font)
+          } else if (fontPickerForLang) {
+            setFontPrefs(p => ({ ...p, [fontPickerForLang]: font }))
+          }
+          setFontPickerForLang(null)
+          setFontSwapPicker(null)
+        }}
+        loading={fontsLoading}
+      />
     </div>
   )
 }
