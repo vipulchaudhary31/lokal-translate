@@ -6,6 +6,10 @@ export default function () {
   showUI(options, data)
 }
 
+const DEBUG_LOGS = false
+const debugLog: (...args: unknown[]) => void = DEBUG_LOGS ? console.log.bind(console) : () => {}
+const debugWarn: (...args: unknown[]) => void = DEBUG_LOGS ? console.warn.bind(console) : () => {}
+
 // Sarvam AI API configuration
 const SARVAM_API_KEY = 'sk_a9leh764_1SnbiQW1DSqavj2miglnZngz'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
@@ -120,7 +124,7 @@ const LANGUAGE_FONTS = {
   'mr': 'Noto Sans Devanagari UI', // Marathi  
   'bn': 'Noto Sans Bengali UI',    // Bengali
   'gu': 'Noto Sans Gujarati UI',   // Gujarati
-  'pa': 'Noto Sans Gurmukhi UI',   // Punjabi
+  'pa': 'Noto Sans Gurmukhi',      // Punjabi
   'ta': 'Noto Sans Tamil UI',      // Tamil
   'te': 'Kohinoor Telugu',         // Telugu (special case)
   'kn': 'Noto Sans Kannada UI',    // Kannada
@@ -329,7 +333,7 @@ function reapplyDecorations(node: TextNode, ranges: DecorationRange[]): void {
         node.setRangeTextDecorationColor(r.start, r.end, r.color as Parameters<TextNode['setRangeTextDecorationColor']>[2])
       }
     } catch (e) {
-      console.warn('[Apply styles] Failed to re-apply decoration', r, e)
+      debugWarn('[Apply styles] Failed to re-apply decoration', r, e)
     }
   }
 }
@@ -345,13 +349,13 @@ async function applyUserDefinedStyleMapping(
     const decorationRanges = getDecorationRanges(textNode)
     const src = sourceOverride ?? getSourceStyleFromNode(textNode)
     if (!src) {
-      console.log('[Apply styles] Skip: could not get source style from node')
+      debugLog('[Apply styles] Skip: could not get source style from node')
       return false
     }
     const mappings = await loadStyleMappings()
     const langMap = mappings[targetLanguage]
     if (!langMap) {
-      console.log('[Apply styles] No mappings for language:', targetLanguage)
+      debugLog('[Apply styles] No mappings for language:', targetLanguage)
       return false
     }
     const key = sourceStyleKey(src.font, src.size, src.lh, src.weight)
@@ -376,14 +380,14 @@ async function applyUserDefinedStyleMapping(
         }
       }
       if (bestKey) target = langMap[bestKey]
-      if (target) console.log('[Apply styles] Using font+weight match:', bestKey, '→', target)
+      if (target) debugLog('[Apply styles] Using font+weight match:', bestKey, '→', target)
     }
     if (!target) {
-      console.log('[Apply styles] No mapping for key:', key, 'available keys:', Object.keys(langMap))
+      debugLog('[Apply styles] No mapping for key:', key, 'available keys:', Object.keys(langMap))
       return false
     }
     if (target === 'skip') {
-      console.log('[Apply styles] Mapping is skip for:', key)
+      debugLog('[Apply styles] Mapping is skip for:', key)
       return false
     }
     // Try local styles first, then getStyleByIdAsync (works for library styles in doc)
@@ -397,22 +401,23 @@ async function applyUserDefinedStyleMapping(
       } catch { /* library styles may not be resolvable by ID in some contexts */ }
     }
     if (!style) {
-      console.warn('[Apply styles] Style not found (local or library):', target)
+      debugWarn('[Apply styles] Style not found (local or library):', target)
       return false
     }
     try {
       const fn = style.fontName as FontName
-      await figma.loadFontAsync(fn)
+      const loaded = await loadFontCached(fn)
+      if (!loaded) return false
       await textNode.setTextStyleIdAsync(style.id)
       if (decorationRanges.length > 0) reapplyDecorations(textNode, decorationRanges)
-      console.log('[Apply styles] Applied user mapping:', style.name)
+      debugLog('[Apply styles] Applied user mapping:', style.name)
       return true
     } catch (e) {
-      console.warn('[Apply styles] Failed to apply', style.name, e)
+      debugWarn('[Apply styles] Failed to apply', style.name, e)
       return false
     }
   } catch (e) {
-    console.warn('applyUserDefinedStyleMapping error:', e)
+    debugWarn('applyUserDefinedStyleMapping error:', e)
     return false
   }
 }
@@ -423,59 +428,43 @@ async function loadAllFontsForTextNode(node: TextNode): Promise<void> {
   if (len === 0) {
     const fn = node.fontName
     if (fn !== figma.mixed && fn && typeof fn === 'object' && 'family' in fn) {
-      await figma.loadFontAsync(fn as FontName)
+      await loadFontCached(fn as FontName)
     }
     return
   }
   const fonts = node.getRangeAllFontNames(0, len)
-  await Promise.all(fonts.map(f => figma.loadFontAsync(f)))
+  const uniqueFonts = Array.from(new Map(fonts.map(f => [fontCacheKey(f), f])).values())
+  await Promise.all(uniqueFonts.map(f => loadFontCached(f)))
 }
 
 // Function to load font before using it
 async function loadFont(fontName: string, textNode: TextNode): Promise<void> {
   try {
-    console.log(`Loading font: ${fontName}`)
+    debugLog(`Loading font: ${fontName}`)
     
     // Get current font properties to preserve weight and style
     const currentFont = textNode.fontName as FontName
     
     const weightVariants = getWeightStyleNamesToTry(currentFont.style)
-    for (const weight of weightVariants) {
-      try {
-        const fontToLoad: FontName = { 
-          family: fontName, 
-          style: weight || 'Regular'
-        }
-        await figma.loadFontAsync(fontToLoad)
-        console.log(`Successfully loaded: ${fontName} ${weight}`)
-        return // Success, exit function
-      } catch (weightError) {
-        console.log(`Font weight ${weight} not available for ${fontName}`)
-        continue
-      }
+    const fontToLoad = await resolveAvailableFont(getFontFamilyCandidates(fontName), weightVariants)
+    if (fontToLoad) {
+      debugLog(`Successfully loaded: ${fontToLoad.family} ${fontToLoad.style}`)
+      return
     }
     
     // If all weights failed, fall back to Noto Sans with weight mapping
-    console.warn(`Could not load any variant of ${fontName}, using Noto Sans`)
+    debugWarn(`Could not load any variant of ${fontName}, using Noto Sans`)
     const weightOpts = getWeightStyleNamesToTry(currentFont.style)
-    for (const w of weightOpts) {
-      try {
-        await figma.loadFontAsync({ family: 'Noto Sans', style: w || 'Regular' })
-        return
-      } catch { continue }
-    }
-    await figma.loadFontAsync({ family: 'Noto Sans', style: 'Regular' })
+    const notoSans = await resolveAvailableFont(['Noto Sans'], weightOpts)
+    if (notoSans) return
+    await loadFontCached({ family: 'Noto Sans', style: 'Regular' })
     
   } catch (error) {
     console.error(`Error loading font ${fontName}:`, error)
     const wOpts = getWeightStyleNamesToTry((textNode.fontName as FontName).style)
-    for (const w of wOpts) {
-      try {
-        await figma.loadFontAsync({ family: 'Noto Sans', style: w || 'Regular' })
-        return
-      } catch { continue }
-    }
-    await figma.loadFontAsync({ family: 'Noto Sans', style: 'Regular' })
+    const notoSans = await resolveAvailableFont(['Noto Sans'], wOpts)
+    if (notoSans) return
+    await loadFontCached({ family: 'Noto Sans', style: 'Regular' })
   }
 }
 
@@ -543,29 +532,14 @@ async function getTargetFontForRange(
 ): Promise<FontName | null> {
   const newFontFamily = getFontForLanguage(targetLanguage)
   const styleNames = getWeightStyleNamesToTry(originalWeight)
-  for (const style of styleNames) {
-    try {
-      const fn: FontName = { family: newFontFamily, style: style || 'Regular' }
-      await figma.loadFontAsync(fn)
-      return fn
-    } catch { continue }
-  }
+  const preferredFont = await resolveAvailableFont(getFontFamilyCandidates(newFontFamily), styleNames)
+  if (preferredFont) return preferredFont
   const defaultFamily = LANGUAGE_FONTS[targetLanguage as keyof typeof LANGUAGE_FONTS] || 'Noto Sans'
   const fallbackStyles = getWeightStyleNamesToTry(originalWeight)
-  for (const s of fallbackStyles) {
-    try {
-      const fn: FontName = { family: defaultFamily !== newFontFamily ? defaultFamily : 'Noto Sans', style: s || 'Regular' }
-      await figma.loadFontAsync(fn)
-      return fn
-    } catch { continue }
-  }
-  try {
-    const fn: FontName = { family: 'Noto Sans', style: 'Regular' }
-    await figma.loadFontAsync(fn)
-    return fn
-  } catch {
-    return null
-  }
+  const fallbackFamilies = defaultFamily !== newFontFamily
+    ? [...getFontFamilyCandidates(defaultFamily), 'Noto Sans']
+    : ['Noto Sans']
+  return await resolveAvailableFont(fallbackFamilies, fallbackStyles)
 }
 
 // Style fields to preserve during translation – all Figma text properties that have setRange* setters
@@ -666,7 +640,7 @@ async function applySegmentStylesToRange(
       node.setRangeHyperlink(start, end, seg.hyperlink as { type: 'URL' | 'NODE'; value: string } | null)
     }
   } catch (e) {
-    console.warn('applySegmentStylesToRange failed', start, end, e)
+    debugWarn('applySegmentStylesToRange failed', start, end, e)
   }
 }
 
@@ -693,7 +667,7 @@ async function translateWithStyledSegments(
   // non-success so that callers can fall back to whole-text translation and surface
   // a clear message instead of silently doing nothing.
   if (fullText === node.characters) {
-    console.log('translateWithStyledSegments: no text change after segment translation, will fall back to whole-text translate.')
+    debugLog('translateWithStyledSegments: no text change after segment translation, will fall back to whole-text translate.')
     return { success: false, weightMappings: [] }
   }
   const weightMappings: string[] = []
@@ -741,11 +715,11 @@ async function applyFontToTextNode(textNode: TextNode, targetLanguage: string): 
   
   // Only change font if it's different
   if (currentFont.family === newFontFamily) {
-    console.log(`Font already correct: ${newFontFamily}`)
+    debugLog(`Font already correct: ${newFontFamily}`)
     return {success: true}
   }
   
-  console.log(`Changing font from "${currentFont.family} ${currentFont.style}" to "${newFontFamily}"`)
+  debugLog(`Changing font from "${currentFont.family} ${currentFont.style}" to "${newFontFamily}"`)
   
   const originalWeight = currentFont.style
   const originalNumeric = styleNameToWeight(originalWeight)
@@ -755,36 +729,29 @@ async function applyFontToTextNode(textNode: TextNode, targetLanguage: string): 
     let fontApplied = false
     let appliedStyle = ''
     
-    for (const style of styleNames) {
-      try {
-        const targetFont: FontName = { family: newFontFamily, style: style || 'Regular' }
-        await figma.loadFontAsync(targetFont)
-        textNode.fontName = targetFont
-        appliedStyle = style || 'Regular'
-        fontApplied = true
-        break
-      } catch { continue }
+    const targetFont = await resolveAvailableFont(getFontFamilyCandidates(newFontFamily), styleNames)
+    if (targetFont) {
+      textNode.fontName = targetFont
+      appliedStyle = targetFont.style || 'Regular'
+      fontApplied = true
     }
     
     if (!fontApplied) {
       const defaultForLang = LANGUAGE_FONTS[targetLanguage as keyof typeof LANGUAGE_FONTS] || 'Noto Sans'
-      const fallbackFamilies = defaultForLang !== newFontFamily ? [defaultForLang, 'Noto Sans'] : ['Noto Sans']
-      for (const family of fallbackFamilies) {
-        for (const style of styleNames) {
-          try {
-            const fallbackFont: FontName = { family, style: style || 'Regular' }
-            await figma.loadFontAsync(fallbackFont)
-            textNode.fontName = fallbackFont
-            return {
-              success: true,
-              mappingUsed: `${originalWeight} → ${family} ${style || 'Regular'} (fallback)`,
-              originalWeight
-            }
-          } catch { continue }
+      const fallbackFamilies = defaultForLang !== newFontFamily
+        ? [...getFontFamilyCandidates(defaultForLang), 'Noto Sans']
+        : ['Noto Sans']
+      const fallbackFont = await resolveAvailableFont(fallbackFamilies, styleNames)
+      if (fallbackFont) {
+        textNode.fontName = fallbackFont
+        return {
+          success: true,
+          mappingUsed: `${originalWeight} → ${fallbackFont.family} ${fallbackFont.style || 'Regular'} (fallback)`,
+          originalWeight
         }
       }
       const lastResort: FontName = { family: 'Noto Sans', style: 'Regular' }
-      await figma.loadFontAsync(lastResort)
+      await loadFontCached(lastResort)
       textNode.fontName = lastResort
       return {
         success: true,
@@ -872,12 +839,12 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     const cached = await getCached<string>(key)
     if (cached != null) {
       session?.lid?.set(norm, cached)
-      console.log(`LID cache hit: "${norm.substring(0, 30)}..." → ${cached}`)
+      debugLog(`LID cache hit: "${norm.substring(0, 30)}..." → ${cached}`)
       return cached
     }
 
     const requestBody = { input: cleanText.substring(0, 500) }
-    console.log('Language detection request:', cleanText.substring(0, 50) + '...')
+    debugLog('Language detection request:', cleanText.substring(0, 50) + '...')
     await rateLimitBeforeApiCall(session)
 
     const response = await fetchWithTimeout(SARVAM_LANGUAGE_DETECT_URL, {
@@ -913,7 +880,7 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     }
     
     const mappedLanguage = languageMapping[detectedLanguage] || 'en'
-    console.log(`Language detected: ${detectedLanguage} → ${mappedLanguage}`)
+    debugLog(`Language detected: ${detectedLanguage} → ${mappedLanguage}`)
     session?.lid?.set(norm, mappedLanguage)
     await setCached(key, mappedLanguage)
     await trimCacheIfNeeded()
@@ -933,7 +900,7 @@ function isDndNode(node: SceneNode, root?: SceneNode | null): boolean {
   while (currentNode && currentNode.type !== 'PAGE') {
     if (root != null && currentNode === root) break // Stop at selection boundary
     if ('name' in currentNode && currentNode.name.toLowerCase() === 'dnd') {
-      console.log(`DND detected: "${node.name}" is inside DND container "${currentNode.name}"`)
+      debugLog(`DND detected: "${node.name}" is inside DND container "${currentNode.name}"`)
       return true
     }
     currentNode = currentNode.parent
@@ -951,7 +918,7 @@ function isHingNode(node: SceneNode, root?: SceneNode | null): boolean {
   while (currentNode && currentNode.type !== 'PAGE') {
     if (root != null && currentNode === root) break // Stop at selection boundary
     if ('name' in currentNode && currentNode.name.toLowerCase() === 'hing') {
-      console.log(`Hing detected: "${node.name}" is inside hing container "${currentNode.name}"`)
+      debugLog(`Hing detected: "${node.name}" is inside hing container "${currentNode.name}"`)
       return true
     }
     currentNode = currentNode.parent
@@ -968,7 +935,7 @@ function isLmaNode(node: SceneNode): boolean {
 
   while (currentNode && currentNode.type !== 'PAGE') {
     if ('name' in currentNode && currentNode.name.toLowerCase() === 'lma') {
-      console.log(`LMA detected: "${node.name}" is inside LMA container "${currentNode.name}"`)
+      debugLog(`LMA detected: "${node.name}" is inside LMA container "${currentNode.name}"`)
       return true
     }
     currentNode = currentNode.parent
@@ -1063,7 +1030,7 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
     // as Telugu; if text is in Latin script we must call the API so it can transliterate to target script.
     const detected = await detectLanguage(truncatedText, session)
     if (detected === targetLanguage && isInIndicScript(truncatedText)) {
-      console.log(`Skipping transliterate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
+      debugLog(`Skipping transliterate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
       return text
     }
     const sk = `${sourceLanguage}|${targetLanguage}|${norm}`
@@ -1075,7 +1042,7 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
     const cached = await getCached<string>(key)
     if (cached != null) {
       session?.tl?.set(sk, cached)
-      console.log(`Transliterate cache hit: "${norm.substring(0, 30)}..." → ${targetLanguage}`)
+      debugLog(`Transliterate cache hit: "${norm.substring(0, 30)}..." → ${targetLanguage}`)
       return cached
     }
     
@@ -1087,14 +1054,14 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
       spoken_form: false
     }
     
-    console.log('Transliteration request:', {
+    debugLog('Transliteration request:', {
       input: truncatedText.substring(0, 50) + '...',
       source_language_code: LANGUAGE_CODES[sourceLanguage],
       target_language_code: LANGUAGE_CODES[targetLanguage],
       url: SARVAM_TRANSLITERATE_URL
     })
     
-    console.log('Full transliteration request body:', JSON.stringify(requestBody, null, 2))
+    debugLog('Full transliteration request body:', JSON.stringify(requestBody, null, 2))
     await rateLimitBeforeApiCall(session)
 
     const response = await fetchWithTimeout(SARVAM_TRANSLITERATE_URL, {
@@ -1107,11 +1074,11 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
       body: JSON.stringify(requestBody)
     })
 
-    console.log('Transliteration response status:', response.status)
-    console.log('Transliteration response OK:', response.ok)
+    debugLog('Transliteration response status:', response.status)
+    debugLog('Transliteration response OK:', response.ok)
     
     const responseText = await response.text()
-    console.log('Transliteration response text:', responseText.substring(0, 200) + '...')
+    debugLog('Transliteration response text:', responseText.substring(0, 200) + '...')
 
     if (!response.ok) {
       const errMsg = parseSarvamErrorBody(responseText, response.status)
@@ -1124,7 +1091,7 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
     session?.tl?.set(sk, transliteratedText)
     await setCached(key, transliteratedText)
     await trimCacheIfNeeded()
-    console.log('Transliteration result:', transliteratedText)
+    debugLog('Transliteration result:', transliteratedText)
     
     return transliteratedText
   } catch (error) {
@@ -1146,7 +1113,7 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     // as Telugu; if text is in Latin script we must call the API so it can translate/transliterate.
     const detected = await detectLanguage(truncatedText, session)
     if (detected === targetLanguage && isInIndicScript(truncatedText)) {
-      console.log(`Skipping translate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
+      debugLog(`Skipping translate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
       return text
     }
     
@@ -1167,7 +1134,7 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     const cached = await getCached<string>(cacheKeyStr)
     if (cached != null) {
       session?.tr?.set(sk, cached)
-      console.log(`Translate cache hit: "${norm.substring(0, 30)}..." → ${targetLanguage}`)
+      debugLog(`Translate cache hit: "${norm.substring(0, 30)}..." → ${targetLanguage}`)
       return cached
     }
     
@@ -1180,14 +1147,14 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
       numerals_format: 'international'
     }
     
-    console.log('Translation request:', {
+    debugLog('Translation request:', {
       input: truncatedText.substring(0, 50) + '...',
       source_language_code: sourceCode,
       target_language_code: LANGUAGE_CODES[targetLanguage],
       url: SARVAM_API_URL
     })
     
-    console.log('Full request body:', JSON.stringify(requestBody, null, 2))
+    debugLog('Full request body:', JSON.stringify(requestBody, null, 2))
     await rateLimitBeforeApiCall(session)
 
     const response = await fetchWithTimeout(SARVAM_API_URL, {
@@ -1200,11 +1167,11 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
       body: JSON.stringify(requestBody)
     })
 
-    console.log('Response status:', response.status)
-    console.log('Response OK:', response.ok)
+    debugLog('Response status:', response.status)
+    debugLog('Response OK:', response.ok)
     
     const responseText = await response.text()
-    console.log('Response text:', responseText.substring(0, 200) + '...')
+    debugLog('Response text:', responseText.substring(0, 200) + '...')
 
     if (!response.ok) {
       const errMsg = parseSarvamErrorBody(responseText, response.status)
@@ -1218,7 +1185,7 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     session?.tr?.set(sk, cleanTranslation)
     await setCached(cacheKeyStr, cleanTranslation)
     await trimCacheIfNeeded()
-    console.log('Translation result:', rawTranslation.substring(0, 50) + '...')
+    debugLog('Translation result:', rawTranslation.substring(0, 50) + '...')
     return cleanTranslation
   } catch (error) {
     const msg = getApiErrorMessage(error, 'Translation')
@@ -1331,8 +1298,8 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
   // First try to find the style by its properties
   const allStyles = figma.getLocalTextStyles()
   
-  console.log('\n=== GET OR CREATE TEXT STYLE ===')
-  console.log('Looking for text style:', {
+  debugLog('\n=== GET OR CREATE TEXT STYLE ===')
+  debugLog('Looking for text style:', {
     fontFamily,
     definition,
     totalStyles: allStyles.length
@@ -1356,7 +1323,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
     
     const matches = sizeMatches && lineHeightMatches
     if (matches) {
-      console.log('Found size/lineHeight match:', {
+      debugLog('Found size/lineHeight match:', {
         name: s.name,
         size: s.fontSize,
         lineHeight: s.lineHeight,
@@ -1368,13 +1335,13 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
     return matches
   })
   
-  console.log('Found matching styles:', matchingStyles.map(s => s.name))
+  debugLog('Found matching styles:', matchingStyles.map(s => s.name))
   
   if (matchingStyles.length > 0) {
     if (isTeluguFont) {
       // Looking for Telugu styles
       const teluguStyles = matchingStyles.filter(s => s.name.startsWith('Telugu/'))
-      console.log('Found Telugu styles:', teluguStyles.map(s => s.name))
+      debugLog('Found Telugu styles:', teluguStyles.map(s => s.name))
       
       if (teluguStyles.length > 0) {
         // Look for matching weight in Telugu styles
@@ -1384,7 +1351,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
           
           // For SemiBold definition, look for Prominent or SemiBold in the name
           if (definition.weight === 'SemiBold') {
-            console.log('Checking Telugu style for SemiBold:', {
+            debugLog('Checking Telugu style for SemiBold:', {
               name: s.name,
               isProminent
             })
@@ -1392,7 +1359,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
           }
           
           // For Regular definition, look for Regular in the name or absence of Prominent/SemiBold
-          console.log('Checking Telugu style for Regular:', {
+          debugLog('Checking Telugu style for Regular:', {
             name: s.name,
             isRegular
           })
@@ -1400,7 +1367,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
         })
         
         if (teluguStyle) {
-          console.log('Found matching Telugu style:', {
+          debugLog('Found matching Telugu style:', {
             name: teluguStyle.name,
             weight: definition.weight
           })
@@ -1408,13 +1375,13 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
         }
         
         // If no exact weight match, use first Telugu style
-        console.log('No exact Telugu weight match, using first Telugu style')
+        debugLog('No exact Telugu weight match, using first Telugu style')
         return teluguStyles[0]
       }
     } else {
       // Looking for non-Telugu styles
       const nonTeluguStyles = matchingStyles.filter(s => s.name.startsWith('Non Telugu/'))
-      console.log('Found non-Telugu styles:', nonTeluguStyles.map(s => s.name))
+      debugLog('Found non-Telugu styles:', nonTeluguStyles.map(s => s.name))
       
       if (nonTeluguStyles.length > 0) {
         // Look for matching weight in non-Telugu styles
@@ -1424,7 +1391,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
           
           // For SemiBold definition, look for Prominent or SemiBold in the name
           if (definition.weight === 'SemiBold') {
-            console.log('Checking non-Telugu style for SemiBold:', {
+            debugLog('Checking non-Telugu style for SemiBold:', {
               name: s.name,
               isProminent
             })
@@ -1432,7 +1399,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
           }
           
           // For Regular definition, look for Regular in the name or absence of Prominent/SemiBold
-          console.log('Checking non-Telugu style for Regular:', {
+          debugLog('Checking non-Telugu style for Regular:', {
             name: s.name,
             isRegular
           })
@@ -1440,7 +1407,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
         })
         
         if (nonTeluguStyle) {
-          console.log('Found matching non-Telugu style:', {
+          debugLog('Found matching non-Telugu style:', {
             name: nonTeluguStyle.name,
             weight: definition.weight
           })
@@ -1448,23 +1415,23 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
         }
         
         // If no exact weight match, use first non-Telugu style
-        console.log('No exact non-Telugu weight match, using first non-Telugu style')
+        debugLog('No exact non-Telugu weight match, using first non-Telugu style')
         return nonTeluguStyles[0]
       }
     }
     
     // If no style found in preferred category, use first matching style
-    console.log('No style found in preferred category, using first matching style')
+    debugLog('No style found in preferred category, using first matching style')
     return matchingStyles[0]
   }
   
   // If no matching style found
   if (!createIfMissing) {
-    console.log('No matching style found, not creating (translation mode)')
+    debugLog('No matching style found, not creating (translation mode)')
     return null
   }
   const styleName = isTeluguFont ? `Telugu/${definition.styleName}` : `Non Telugu/${definition.styleName}`
-  console.log(`Creating new ${isTeluguFont ? 'Telugu' : 'non-Telugu'} text style:`, styleName)
+  debugLog(`Creating new ${isTeluguFont ? 'Telugu' : 'non-Telugu'} text style:`, styleName)
   
   const newStyle = figma.createTextStyle()
   newStyle.name = styleName
@@ -1485,10 +1452,10 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
   }
   
   try {
-    console.log('Loading font for new style:', fontName)
+    debugLog('Loading font for new style:', fontName)
     await figma.loadFontAsync(fontName)
     newStyle.fontName = fontName
-    console.log('✅ Successfully created new style:', {
+    debugLog('✅ Successfully created new style:', {
       name: newStyle.name,
       size: newStyle.fontSize,
       lineHeight: newStyle.lineHeight,
@@ -1517,13 +1484,13 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
   if (lineHeight !== figma.mixed) {
     if ('value' in lineHeight && lineHeight.unit === 'PIXELS') {
       lineHeightPx = lineHeight.value
-      console.log('Found line height in pixels:', lineHeightPx)
+      debugLog('Found line height in pixels:', lineHeightPx)
     }
   }
   
   // Get current weight
   const currentWeight = fontName.style.toLowerCase()
-  console.log('Current font weight:', currentWeight)
+  debugLog('Current font weight:', currentWeight)
   
   // Check if weight is heavier than Regular
   const isHeavier = currentWeight.includes('medium') || 
@@ -1537,7 +1504,7 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
                    currentWeight.includes('heavy') ||
                    currentWeight.includes('black')
   
-  console.log('Weight analysis:', {
+  debugLog('Weight analysis:', {
     currentWeight,
     isHeavier,
     fontSize,
@@ -1559,7 +1526,7 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
     
     const matches = sizeMatches && lineHeightMatches
     if (matches) {
-      console.log('Found potential style match:', {
+      debugLog('Found potential style match:', {
         styleName: def.styleName,
         size: def.size,
         teluguSize: def.teluguSize,
@@ -1575,12 +1542,12 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
     return matches
   })
   
-  console.log('Found matching style definitions:', matchingDefs)
+  debugLog('Found matching style definitions:', matchingDefs)
   
   // If we have exactly one match, return it regardless of weight
   // This ensures Heading styles are applied even with different weights
   if (matchingDefs.length === 1 && matchingDefs[0].styleName.startsWith('Heading/')) {
-    console.log('Using Heading style regardless of weight:', matchingDefs[0])
+    debugLog('Using Heading style regardless of weight:', matchingDefs[0])
     return matchingDefs[0]
   }
   
@@ -1595,9 +1562,9 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
   })
   
   if (matchingStyle) {
-    console.log('Selected style definition:', matchingStyle)
+    debugLog('Selected style definition:', matchingStyle)
   } else {
-    console.log('No matching style found for weight')
+    debugLog('No matching style found for weight')
   }
   
   return matchingStyle || null
@@ -1609,8 +1576,8 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
   try {
     const currentFont = textNode.fontName as FontName
 
-    console.log('\n=== TELUGU FONT STYLE APPLICATION START ===')
-    console.log('Initial text node state:', {
+    debugLog('\n=== TELUGU FONT STYLE APPLICATION START ===')
+    debugLog('Initial text node state:', {
       text: textNode.characters.substring(0, 50),
       currentFont: textNode.fontName,
       fontSize: textNode.fontSize,
@@ -1621,11 +1588,11 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
     // Step 1: Find matching style definition first - IMPORTANT: Pass true for isTeluguStyle
     const matchingDef = findMatchingStyleDefinition(textNode, true)
     if (!matchingDef) {
-      console.log('❌ No matching style definition found')
+      debugLog('❌ No matching style definition found')
       return 'skipped'
     }
 
-    console.log('Found matching style definition:', matchingDef)
+    debugLog('Found matching style definition:', matchingDef)
 
     // Step 2: Get existing Telugu style (never create during translation)
     const style = await getOrCreateTextStyle('Kohinoor Telugu', {
@@ -1648,7 +1615,7 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
         await figma.loadFontAsync({ family: 'Kohinoor Telugu', style: 'SemiBold' })
         textNode.fontName = { family: 'Kohinoor Telugu', style: 'SemiBold' }
       } catch (error) {
-        console.log('⚠️ SemiBold not available, falling back to Regular')
+        debugLog('⚠️ SemiBold not available, falling back to Regular')
         await figma.loadFontAsync({ family: 'Kohinoor Telugu', style: 'Regular' })
         textNode.fontName = { family: 'Kohinoor Telugu', style: 'Regular' }
       }
@@ -1667,11 +1634,11 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
     if (style) {
       await textNode.setTextStyleIdAsync(style.id)
     } else {
-      console.log('No matching Telugu style in file; applied font and size/lineHeight only')
+      debugLog('No matching Telugu style in file; applied font and size/lineHeight only')
     }
 
-    console.log('=== FINAL TEXT NODE STATE ===')
-    console.log({
+    debugLog('=== FINAL TEXT NODE STATE ===')
+    debugLog({
       text: textNode.characters.substring(0, 50),
       font: textNode.fontName,
       size: textNode.fontSize,
@@ -1692,8 +1659,8 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
   const currentFont = textNode.fontName as FontName
 
   try {
-    console.log('\n--- Starting font swap ---')
-    console.log('Text node:', {
+    debugLog('\n--- Starting font swap ---')
+    debugLog('Text node:', {
       text: textNode.characters.substring(0, 50),
       currentFont: currentFont,
       targetFont,
@@ -1709,7 +1676,7 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
         const fontToApply: FontName = { family: targetFont, style: style || 'Regular' }
         await figma.loadFontAsync(fontToApply)
         textNode.fontName = fontToApply
-        console.log('✅ Successfully applied', targetFont, style || 'Regular')
+        debugLog('✅ Successfully applied', targetFont, style || 'Regular')
         return 'success'
       } catch {
         continue
@@ -1719,7 +1686,7 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
     // Fallback: try Regular if nothing else worked
     await figma.loadFontAsync({ family: targetFont, style: 'Regular' })
     textNode.fontName = { family: targetFont, style: 'Regular' }
-    console.log('✅ Successfully applied', targetFont, 'Regular (fallback)')
+    debugLog('✅ Successfully applied', targetFont, 'Regular (fallback)')
     return 'success'
     
   } catch (error) {
@@ -1730,9 +1697,9 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
 
 // Message handler for translation requests
 figma.ui.onmessage = async (msg) => {
-  console.log('\n=== MESSAGE RECEIVED ===')
-  console.log('Message type:', msg.type)
-  console.log('Message data:', {
+  debugLog('\n=== MESSAGE RECEIVED ===')
+  debugLog('Message type:', msg.type)
+  debugLog('Message data:', {
     targetLanguage: msg.targetLanguage,
     type: msg.type
   })
@@ -1747,8 +1714,8 @@ figma.ui.onmessage = async (msg) => {
       const containers = selection.filter(node => isContainerNode(node))
       const textLayers = selection.filter(node => node.type === 'TEXT') as TextNode[]
       
-      console.log('\n=== SELECTION ANALYSIS ===')
-      console.log('Selected items:', {
+      debugLog('\n=== SELECTION ANALYSIS ===')
+      debugLog('Selected items:', {
         containers: containers.length,
         textLayers: textLayers.length
       })
@@ -1779,15 +1746,15 @@ figma.ui.onmessage = async (msg) => {
             let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
             if (isLma) {
               nodeType = 'lma'
-              console.log('Found LMA text node for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+              debugLog('Found LMA text node for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             } else if (isHing) {
               nodeType = 'hing'
-              console.log('Found Hing text node for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+              debugLog('Found Hing text node for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             } else if (isDnd) {
               nodeType = 'dnd'
-              console.log('Found DND text node for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+              debugLog('Found DND text node for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             } else {
-              console.log('Found text node for translation:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+              debugLog('Found text node for translation:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             }
             
             textNodes.push({
@@ -1811,15 +1778,15 @@ figma.ui.onmessage = async (msg) => {
           let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
           if (isLma) {
             nodeType = 'lma'
-            console.log('Found selected LMA text layer for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+            debugLog('Found selected LMA text layer for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           } else if (isHing) {
             nodeType = 'hing'
-            console.log('Found selected Hing text layer for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+            debugLog('Found selected Hing text layer for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           } else if (isDnd) {
             nodeType = 'dnd'
-            console.log('Found selected DND text layer for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+            debugLog('Found selected DND text layer for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           } else {
-            console.log('Found selected text layer for translation:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+            debugLog('Found selected text layer for translation:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           }
           
           textNodes.push({
@@ -1830,7 +1797,7 @@ figma.ui.onmessage = async (msg) => {
         }
       })
       
-      console.log(`Total text nodes found: ${textNodes.length}`)
+      debugLog(`Total text nodes found: ${textNodes.length}`)
       
       if (textNodes.length === 0) {
         figma.ui.postMessage({ 
@@ -1846,7 +1813,7 @@ figma.ui.onmessage = async (msg) => {
         count: textNodes.length 
       })
       
-      console.log('[TRANSLATE] Starting translation of', textNodes.length, 'text(s) to', msg.targetLanguage, '— open Plugins → Development → Open Console for details')
+      debugLog('[TRANSLATE] Starting translation of', textNodes.length, 'text(s) to', msg.targetLanguage, '— open Plugins → Development → Open Console for details')
       
       const session = createSessionCache()
       const sourceLanguage = msg.assumeEnglish !== false ? 'en' : undefined
@@ -1894,7 +1861,7 @@ figma.ui.onmessage = async (msg) => {
                 }
                 node.characters = transliteratedText
                 translatedCount++
-                console.log(`✅ Transliterated and font updated: "${originalText.substring(0, 30)}..." → "${transliteratedText.substring(0, 30)}..."`)
+                debugLog(`✅ Transliterated and font updated: "${originalText.substring(0, 30)}..." → "${transliteratedText.substring(0, 30)}..."`)
               } else {
                 // Text unchanged but still apply font/style per preference (e.g. number-only text)
                 const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
@@ -1903,13 +1870,13 @@ figma.ui.onmessage = async (msg) => {
                   if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                 }
                 translatedCount++
-                console.log(`⏭️ No transliteration change; applied font/style: "${originalText.substring(0, 30)}..."`)
+                debugLog(`⏭️ No transliteration change; applied font/style: "${originalText.substring(0, 30)}..."`)
               }
             } else {
               const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
               if (!applied) await applyFontToTextNode(node, msg.targetLanguage)
               translatedCount++
-              console.log(`⏭️ Empty transliteration; font applied for "${originalText.substring(0, 30)}..."`)
+              debugLog(`⏭️ Empty transliteration; font applied for "${originalText.substring(0, 30)}..."`)
             }
           } else if (type === 'dnd') {
             // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
@@ -1919,21 +1886,21 @@ figma.ui.onmessage = async (msg) => {
               if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
             }
             translatedCount++
-            console.log(`✅ DND: preserved text and applied font/style: "${originalText.substring(0, 30)}..."`)
+            debugLog(`✅ DND: preserved text and applied font/style: "${originalText.substring(0, 30)}..."`)
             
           } else if (type === 'lma') {
             translatedCount++
-            console.log(`✅ LMA: skipped translation and font/style changes: "${originalText.substring(0, 30)}..."`)
+            debugLog(`✅ LMA: skipped translation and font/style changes: "${originalText.substring(0, 30)}..."`)
           } else {
             const segmentResult = await translateWithStyledSegments(
               node, msg.targetLanguage, sourceLanguage, session
             )
             if (segmentResult.success) {
               const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
-              if (applied) console.log(`✅ Applied matching style from file`)
+              if (applied) debugLog(`✅ Applied matching style from file`)
               weightMappings.push(...segmentResult.weightMappings)
               translatedCount++
-              console.log(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
+              debugLog(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
             } else {
               const translatedText = await translateText(originalText, msg.targetLanguage, sourceLanguage, session)
               if (translatedText && translatedText.trim().length > 0) {
@@ -1946,7 +1913,7 @@ figma.ui.onmessage = async (msg) => {
                   }
                   node.characters = translatedText
                   translatedCount++
-                  console.log(`✅ Translated and font updated: "${originalText.substring(0, 30)}..." → "${translatedText.substring(0, 30)}..."`)
+                  debugLog(`✅ Translated and font updated: "${originalText.substring(0, 30)}..." → "${translatedText.substring(0, 30)}..."`)
                 } else {
                   // Text unchanged (e.g. number) but still apply font/style per preference
                   const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
@@ -1955,7 +1922,7 @@ figma.ui.onmessage = async (msg) => {
                     if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                   }
                   translatedCount++
-                  console.log(`⏭️ No translation change; applied font/style: "${originalText.substring(0, 30)}..." in ${msg.targetLanguage}`)
+                  debugLog(`⏭️ No translation change; applied font/style: "${originalText.substring(0, 30)}..." in ${msg.targetLanguage}`)
                 }
               } else {
                 // Empty result – apply font/style, count as success (text unchanged, font changed)
@@ -1965,7 +1932,7 @@ figma.ui.onmessage = async (msg) => {
                   if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                 }
                 translatedCount++
-                console.log(`⏭️ Empty translation; font applied for "${originalText.substring(0, 30)}..."`)
+                debugLog(`⏭️ Empty translation; font applied for "${originalText.substring(0, 30)}..."`)
               }
             }
           }
@@ -1981,7 +1948,7 @@ figma.ui.onmessage = async (msg) => {
               if (!applied) await applyFontToTextNode(node, msg.targetLanguage)
               fontApplied = true
             } catch (fontErr) {
-              console.warn('[Apply styles] Failed after translation error:', fontErr)
+              debugWarn('[Apply styles] Failed after translation error:', fontErr)
             }
           }
           // Only report as error if font wasn't applied; otherwise it's success (text unchanged, font changed)
@@ -1994,13 +1961,13 @@ figma.ui.onmessage = async (msg) => {
             figma.ui.postMessage({ type: 'translation-error', message: msgText })
           } else {
             translatedCount++
-            console.log(`⏭️ API failed (${errMsg}) but font applied for ${loc}`)
+            debugLog(`⏭️ API failed (${errMsg}) but font applied for ${loc}`)
           }
         }
       }
       
       if (errors > 0) {
-        console.log('[TRANSLATE] === FAILURE SUMMARY ===', errorMessages)
+        debugLog('[TRANSLATE] === FAILURE SUMMARY ===', errorMessages)
       }
       
       figma.ui.postMessage({ 
@@ -2185,7 +2152,7 @@ figma.ui.onmessage = async (msg) => {
                 const applied = await applyUserDefinedStyleMapping(node, targetLang, srcOverride)
                 if (!applied) await applyFontToTextNode(node, targetLang)
               } catch (fontErr) {
-                console.warn('[Bulk] Apply font after error:', fontErr)
+                debugWarn('[Bulk] Apply font after error:', fontErr)
               }
             }
           }
@@ -2467,7 +2434,7 @@ figma.ui.onmessage = async (msg) => {
         if (!isLmaNode(textLayer)) textNodes.push(textLayer)
       })
       
-      console.log(`Total text nodes found for font swap: ${textNodes.length}`)
+      debugLog(`Total text nodes found for font swap: ${textNodes.length}`)
       
       if (textNodes.length === 0) {
         figma.ui.postMessage({ 
@@ -2479,7 +2446,7 @@ figma.ui.onmessage = async (msg) => {
       }
       
       const relevantNodes = textNodes
-      console.log(`Processing all ${relevantNodes.length} text nodes`)
+      debugLog(`Processing all ${relevantNodes.length} text nodes`)
       
       figma.ui.postMessage({ 
         type: 'font-swap-started', 
@@ -2507,13 +2474,13 @@ figma.ui.onmessage = async (msg) => {
           
           if (result === 'success') {
             swappedCount++
-            console.log(`✅ Font swapped successfully for text node ${i + 1}`)
+            debugLog(`✅ Font swapped successfully for text node ${i + 1}`)
           } else if (result === 'error') {
             errors++
-            console.log(`❌ Failed to swap font for text node ${i + 1}`)
+            debugLog(`❌ Failed to swap font for text node ${i + 1}`)
           } else {
             skippedCount++
-            console.log(`⚠️ Skipped font swap for text node ${i + 1}`)
+            debugLog(`⚠️ Skipped font swap for text node ${i + 1}`)
           }
           
           // Small delay to prevent any potential issues

@@ -948,6 +948,7 @@ declare const styles: {
   readonly "hover:shadow-[0_16px_32px_rgba(17,24,39,0.05),0_4px_12px_rgba(17,24,39,0.025)]": string;
   readonly "hover:shadow-[0_18px_34px_rgba(17,24,39,0.06),0_6px_14px_rgba(17,24,39,0.035)]": string;
   readonly "hover:shadow-[inset_0_0_0_1px_rgba(23,23,23,0.06),0_12px_22px_rgba(17,24,39,0.06)]": string;
+  readonly "hover:text-[#1f9d55]/80": string;
   readonly "hover:text-accent-foreground": string;
   readonly "hover:text-accent/80": string;
   readonly "hover:text-foreground": string;

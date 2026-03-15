@@ -134,7 +134,7 @@ const DEFAULT_LANGUAGE_FONTS: Record<string, string> = {
   mr: 'Noto Sans Devanagari UI',
   bn: 'Noto Sans Bengali UI',
   gu: 'Noto Sans Gujarati UI',
-  pa: 'Noto Sans Gurmukhi UI',
+  pa: 'Noto Sans Gurmukhi',
   ta: 'Noto Sans Tamil UI',
   te: 'Kohinoor Telugu',
   kn: 'Noto Sans Kannada UI',
@@ -631,7 +631,7 @@ function StyleMappingModal({
                   <Button
                     variant="link"
                     size="sm"
-                    className="h-auto px-0 text-[13px] font-medium text-accent hover:text-accent/80"
+                    className="h-auto px-0 text-[13px] font-medium text-[#1f9d55] hover:text-[#1f9d55]/80"
                     onClick={handleAutoApply}
                     title="Auto-match source styles to target by size and weight"
                   >
@@ -1184,7 +1184,7 @@ function Plugin() {
                 <div className="space-y-1">
                   <h2 className="text-base font-semibold text-foreground">Font Preference</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Select a font to show in the translation result frame
+                    Select a font to show in the translation result frame. You can also map your font styles.
                   </p>
                 </div>
 
@@ -1278,9 +1278,9 @@ function Plugin() {
                   </p>
                 </div>
 
-                <Card className="min-h-0 flex-1 rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                  <CardContent className="flex h-full flex-col p-4">
-                    <div className="grid auto-rows-min content-start items-start flex-1 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                  <CardContent className="p-4">
+                    <div className="grid auto-rows-min grid-cols-2 gap-x-2 gap-y-1 pr-1">
                       {bulkLanguageOptions.map(o => (
                         <label
                           key={o.value}
