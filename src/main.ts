@@ -139,6 +139,9 @@ const FONT_FAMILY_ALIASES: Record<string, string[]> = {
 
 const loadedFontCache = new Set<string>()
 const failedFontCache = new Set<string>()
+let availableFontFamiliesCache: string[] | null = null
+let availableFontFamiliesPromise: Promise<string[]> | null = null
+const libraryTextStyleCache = new Map<string, Promise<TextStyle | null>>()
 
 function fontCacheKey(font: FontName): string {
   return `${font.family}__${font.style}`
@@ -170,6 +173,53 @@ async function resolveAvailableFont(families: string[], styles: string[]): Promi
     }
   }
   return null
+}
+
+async function getAvailableFontFamilies(): Promise<string[]> {
+  if (availableFontFamiliesCache) return availableFontFamiliesCache
+  if (availableFontFamiliesPromise) return availableFontFamiliesPromise
+
+  availableFontFamiliesPromise = (async () => {
+    const fonts = await figma.listAvailableFontsAsync()
+    const families = Array.from(
+      new Set(
+        fonts
+          .map(f => (f.fontName && f.fontName.family) || '')
+          .filter(name => {
+            const t = (name || '').trim()
+            if (!t) return false
+            if (/^[\s?\uFFFD]+$/.test(t)) return false
+            if (!/[a-zA-Z0-9\u00C0-\u024F]/.test(t)) return false
+            return true
+          })
+      )
+    ).sort((a, b) => a.localeCompare(b))
+    availableFontFamiliesCache = families
+    return families
+  })()
+
+  try {
+    return await availableFontFamiliesPromise
+  } finally {
+    availableFontFamiliesPromise = null
+  }
+}
+
+async function getLibraryTextStyleById(styleId: string): Promise<TextStyle | null> {
+  const cached = libraryTextStyleCache.get(styleId)
+  if (cached) return cached
+
+  const pending = (async () => {
+    try {
+      const style = await figma.getStyleByIdAsync(styleId)
+      return style && style.type === 'TEXT' ? (style as TextStyle) : null
+    } catch {
+      return null
+    }
+  })()
+
+  libraryTextStyleCache.set(styleId, pending)
+  return pending
 }
 
 // Font prefs cache (loaded at start of translate, updated on save)
@@ -394,12 +444,7 @@ async function applyUserDefinedStyleMapping(
     let style: TextStyle | null = null
     const localStyles = figma.getLocalTextStyles()
     style = localStyles.find(s => s.id === target) ?? null
-    if (!style) {
-      try {
-        const byId = await figma.getStyleByIdAsync(target)
-        if (byId && byId.type === 'TEXT') style = byId as TextStyle
-      } catch { /* library styles may not be resolvable by ID in some contexts */ }
-    }
+    if (!style) style = await getLibraryTextStyleById(target)
     if (!style) {
       debugWarn('[Apply styles] Style not found (local or library):', target)
       return false
@@ -674,7 +719,7 @@ async function translateWithStyledSegments(
   const firstWeight = (segments[0].fontName as FontName)?.style || 'Regular'
   const firstTarget = await getTargetFontForRange(targetLang, firstWeight)
   if (firstTarget) {
-    await figma.loadFontAsync(firstTarget)
+    await loadFontCached(firstTarget)
     node.fontName = firstTarget
   }
   node.characters = fullText
@@ -1453,7 +1498,7 @@ async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDef
   
   try {
     debugLog('Loading font for new style:', fontName)
-    await figma.loadFontAsync(fontName)
+    if (!(await loadFontCached(fontName))) throw new Error(`Failed to load ${fontName.family} ${fontName.style}`)
     newStyle.fontName = fontName
     debugLog('✅ Successfully created new style:', {
       name: newStyle.name,
@@ -1612,15 +1657,21 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
     // Try to load SemiBold first for heavier weights
     if (isHeavier) {
       try {
-        await figma.loadFontAsync({ family: 'Kohinoor Telugu', style: 'SemiBold' })
+        if (!(await loadFontCached({ family: 'Kohinoor Telugu', style: 'SemiBold' }))) {
+          throw new Error('SemiBold not available')
+        }
         textNode.fontName = { family: 'Kohinoor Telugu', style: 'SemiBold' }
       } catch (error) {
         debugLog('⚠️ SemiBold not available, falling back to Regular')
-        await figma.loadFontAsync({ family: 'Kohinoor Telugu', style: 'Regular' })
+        if (!(await loadFontCached({ family: 'Kohinoor Telugu', style: 'Regular' }))) {
+          throw error
+        }
         textNode.fontName = { family: 'Kohinoor Telugu', style: 'Regular' }
       }
     } else {
-      await figma.loadFontAsync({ family: 'Kohinoor Telugu', style: 'Regular' })
+      if (!(await loadFontCached({ family: 'Kohinoor Telugu', style: 'Regular' }))) {
+        throw new Error('Regular not available')
+      }
       textNode.fontName = { family: 'Kohinoor Telugu', style: 'Regular' }
     }
 
@@ -1671,23 +1722,21 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
     const originalWeight = currentFont.style || 'Regular'
     const styleNames = getWeightStyleNamesToTry(originalWeight)
     
-    for (const style of styleNames) {
-      try {
-        const fontToApply: FontName = { family: targetFont, style: style || 'Regular' }
-        await figma.loadFontAsync(fontToApply)
-        textNode.fontName = fontToApply
-        debugLog('✅ Successfully applied', targetFont, style || 'Regular')
-        return 'success'
-      } catch {
-        continue
-      }
+    const fontToApply = await resolveAvailableFont(getFontFamilyCandidates(targetFont), styleNames)
+    if (fontToApply) {
+      textNode.fontName = fontToApply
+      debugLog('✅ Successfully applied', fontToApply.family, fontToApply.style || 'Regular')
+      return 'success'
     }
     
     // Fallback: try Regular if nothing else worked
-    await figma.loadFontAsync({ family: targetFont, style: 'Regular' })
-    textNode.fontName = { family: targetFont, style: 'Regular' }
-    debugLog('✅ Successfully applied', targetFont, 'Regular (fallback)')
-    return 'success'
+    const regularFallback = await resolveAvailableFont(getFontFamilyCandidates(targetFont), ['Regular'])
+    if (regularFallback) {
+      textNode.fontName = regularFallback
+      debugLog('✅ Successfully applied', regularFallback.family, 'Regular (fallback)')
+      return 'success'
+    }
+    return 'error'
     
   } catch (error) {
     console.error('❌ Error swapping font family:', error)
@@ -1816,7 +1865,7 @@ figma.ui.onmessage = async (msg) => {
       debugLog('[TRANSLATE] Starting translation of', textNodes.length, 'text(s) to', msg.targetLanguage, '— open Plugins → Development → Open Console for details')
       
       const session = createSessionCache()
-      const sourceLanguage = msg.assumeEnglish !== false ? 'en' : undefined
+      const sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
       let translatedCount = 0
       let errors = 0
       let lastErrorMessage = ''
@@ -1830,9 +1879,6 @@ figma.ui.onmessage = async (msg) => {
         if (type === 'translate' || type === 'dnd') sourceStyleBeforeTranslate = getSourceStyleFromNode(node)
         
         try {
-          // Load ALL fonts in the node (required for mixed-style text: strikethrough, underline, multiple fonts)
-          await loadAllFontsForTextNode(node)
-          
           // Update progress
           let action = 'Processing'
           if (type === 'translate') action = 'Translating'
@@ -1846,6 +1892,11 @@ figma.ui.onmessage = async (msg) => {
             total: textNodes.length,
             message: `${action} text ${i + 1} of ${textNodes.length}...`
           })
+
+          if (type !== 'lma') {
+            // Load ALL fonts in the node (required for mixed-style text: strikethrough, underline, multiple fonts)
+            await loadAllFontsForTextNode(node)
+          }
           
           if (type === 'hing') {
             const transliteratedText = await transliterateText(originalText, 'en', msg.targetLanguage, session)
@@ -2062,6 +2113,7 @@ figma.ui.onmessage = async (msg) => {
       for (let langIdx = 0; langIdx < bulkLangs.length; langIdx++) {
         const targetLang = bulkLangs[langIdx]
         const langLabel = BULK_LANGUAGE_LABELS[targetLang]
+        const sourceLanguage = msg.assumeEnglish === true && targetLang !== 'en' ? 'en' : undefined
         
         figma.ui.postMessage({
           type: 'bulk-progress',
@@ -2106,8 +2158,8 @@ figma.ui.onmessage = async (msg) => {
           const { node, originalText, type } = textNodes[i]
           const bulkSourceStyleBefore = (type === 'translate' || type === 'dnd') ? getSourceStyleFromNode(node) : null
           try {
-            await loadAllFontsForTextNode(node)
             if (type === 'hing') {
+              await loadAllFontsForTextNode(node)
               const transliterated = await transliterateText(originalText, 'en', targetLang, bulkSession)
               if (transliterated?.trim() && transliterated !== originalText) {
                 const applied = await applyUserDefinedStyleMapping(node, targetLang)
@@ -2118,15 +2170,17 @@ figma.ui.onmessage = async (msg) => {
                 if (!applied) await applyFontToTextNode(node, targetLang)
               }
             } else if (type === 'dnd') {
+              await loadAllFontsForTextNode(node)
               // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
               const applied = await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
               if (!applied) await applyFontToTextNode(node, targetLang)
             } else if (type === 'lma') {
               // LMA = Leave Me Alone: preserve text and font/style exactly as-is (clone already has original; no-op)
             } else {
-              const segmentResult = await translateWithStyledSegments(node, targetLang, 'en', bulkSession)
+              await loadAllFontsForTextNode(node)
+              const segmentResult = await translateWithStyledSegments(node, targetLang, sourceLanguage, bulkSession)
               if (!segmentResult.success) {
-                const translated = await translateText(originalText, targetLang, 'en', bulkSession)
+                const translated = await translateText(originalText, targetLang, sourceLanguage, bulkSession)
                 if (translated?.trim() && translated !== originalText) {
                   const applied = await applyUserDefinedStyleMapping(node, targetLang)
                   if (!applied) await applyFontToTextNode(node, targetLang)
@@ -2278,6 +2332,12 @@ figma.ui.onmessage = async (msg) => {
       figma.notify(message, msg.error ? { error: true } : undefined)
     }
     return
+  } else if (msg.type === 'ui-notify') {
+    const message = typeof msg.message === 'string' ? msg.message : ''
+    if (message) {
+      figma.notify(message, msg.error ? { error: true } : undefined)
+    }
+    return
   } else if (msg.type === 'get-style-mappings') {
     try {
       const mappings = await loadStyleMappings()
@@ -2330,19 +2390,7 @@ figma.ui.onmessage = async (msg) => {
     return
   } else if (msg.type === 'get-fonts') {
     try {
-      const fonts = await figma.listAvailableFontsAsync()
-      const families = Array.from(new Set(
-        fonts
-          .map(f => (f.fontName && f.fontName.family) || '')
-          .filter(name => {
-            const t = (name || '').trim()
-            if (!t) return false
-            // Exclude names that are only replacement chars, ? or non-printables
-            if (/^[\s?\uFFFD]+$/.test(t)) return false
-            if (!/[a-zA-Z0-9\u00C0-\u024F]/.test(t)) return false
-            return true
-          })
-      )).sort((a, b) => a.localeCompare(b))
+      const families = await getAvailableFontFamilies()
       figma.ui.postMessage({ type: 'font-list-loaded', fonts: families })
     } catch (e) {
       figma.ui.postMessage({ type: 'font-list-loaded', fonts: [] })
@@ -2483,8 +2531,10 @@ figma.ui.onmessage = async (msg) => {
             debugLog(`⚠️ Skipped font swap for text node ${i + 1}`)
           }
           
-          // Small delay to prevent any potential issues
-          await new Promise(resolve => setTimeout(resolve, 50))
+          // Yield occasionally so long swaps stay responsive without forcing a per-node delay.
+          if ((i + 1) % 20 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+          }
           
         } catch (error) {
           console.error(`Error swapping font for text ${i + 1}:`, error)

@@ -764,11 +764,13 @@ function BrandingStrip() {
 
 function Plugin() {
   const [targetLanguage, setTargetLanguage] = React.useState('te')
-  const [isTranslating, setIsTranslating] = React.useState(false)
+  const [isTranslateRunning, setIsTranslateRunning] = React.useState(false)
+  const [isBulkRunning, setIsBulkRunning] = React.useState(false)
   const [weightMappingInfo, setWeightMappingInfo] = React.useState<string[]>([])
   const [showWeightMappings, setShowWeightMappings] = React.useState(false)
   const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(DEFAULT_BULK_LANGUAGES)
   const [bulkSetupSelection, setBulkSetupSelection] = React.useState<string[]>(DEFAULT_BULK_LANGUAGES)
+  const [assumeEnglishSource, setAssumeEnglishSource] = React.useState(false)
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -787,14 +789,22 @@ function Plugin() {
   const cardRailWrapperRef = React.useRef<HTMLDivElement | null>(null)
   const cardRailViewportRef = React.useRef<HTMLDivElement | null>(null)
   const cardRefs = React.useRef<Record<string, HTMLButtonElement | null>>({})
+  const shadowFrameRef = React.useRef<number | null>(null)
   const [selectedCardShadow, setSelectedCardShadow] = React.useState<null | {
     left: number
     top: number
     width: number
     height: number
   }>(null)
+  const notifyInFigma = React.useCallback((message: string, error = false) => {
+    parent.postMessage({ pluginMessage: { type: 'ui-notify', message, error } }, '*')
+  }, [])
 
   const updateSelectedCardShadow = React.useCallback(() => {
+    if (page !== 'translate') {
+      setSelectedCardShadow(null)
+      return
+    }
     const wrapper = cardRailWrapperRef.current
     const selectedCard = cardRefs.current[targetLanguage]
     if (!wrapper || !selectedCard) {
@@ -811,30 +821,47 @@ function Plugin() {
       width: cardRect.width,
       height: cardRect.height,
     })
-  }, [targetLanguage])
+  }, [page, targetLanguage])
 
   React.useLayoutEffect(() => {
-    updateSelectedCardShadow()
+    if (page !== 'translate') {
+      setSelectedCardShadow(null)
+      return
+    }
+
+    const scheduleUpdate = () => {
+      if (shadowFrameRef.current != null) return
+      shadowFrameRef.current = window.requestAnimationFrame(() => {
+        shadowFrameRef.current = null
+        updateSelectedCardShadow()
+      })
+    }
+
+    scheduleUpdate()
 
     const viewport = cardRailViewportRef.current
     const wrapper = cardRailWrapperRef.current
     const selectedCard = cardRefs.current[targetLanguage]
-    const resizeObserver = new ResizeObserver(() => updateSelectedCardShadow())
+    const resizeObserver = new ResizeObserver(() => scheduleUpdate())
 
     if (viewport) {
-      viewport.addEventListener('scroll', updateSelectedCardShadow, { passive: true })
+      viewport.addEventListener('scroll', scheduleUpdate, { passive: true })
       resizeObserver.observe(viewport)
     }
     if (wrapper) resizeObserver.observe(wrapper)
     if (selectedCard) resizeObserver.observe(selectedCard)
-    window.addEventListener('resize', updateSelectedCardShadow)
+    window.addEventListener('resize', scheduleUpdate)
 
     return () => {
-      if (viewport) viewport.removeEventListener('scroll', updateSelectedCardShadow)
-      window.removeEventListener('resize', updateSelectedCardShadow)
+      if (shadowFrameRef.current != null) {
+        window.cancelAnimationFrame(shadowFrameRef.current)
+        shadowFrameRef.current = null
+      }
+      if (viewport) viewport.removeEventListener('scroll', scheduleUpdate)
+      window.removeEventListener('resize', scheduleUpdate)
       resizeObserver.disconnect()
     }
-  }, [targetLanguage, updateSelectedCardShadow])
+  }, [page, targetLanguage, updateSelectedCardShadow])
 
   const effectiveFontForLang = (lang: string): string => {
     const userChoice = fontPrefs[lang]
@@ -870,18 +897,22 @@ function Plugin() {
       if (!msg) return
       switch (msg.type) {
         case 'translation-started':
+          setIsTranslateRunning(true)
+          setIsBulkRunning(false)
           break
         case 'translation-progress':
           break
         case 'bulk-started':
+          setIsBulkRunning(true)
+          setIsTranslateRunning(false)
           break
         case 'bulk-progress':
           break
         case 'bulk-complete':
-          setIsTranslating(false)
+          setIsBulkRunning(false)
           break
         case 'translation-complete':
-          setIsTranslating(false)
+          setIsTranslateRunning(false)
           if (msg.weightMappings && msg.weightMappings.length > 0) {
             setWeightMappingInfo(msg.weightMappings)
             setShowWeightMappings(true)
@@ -899,7 +930,8 @@ function Plugin() {
         case 'font-swap-error':
           break
         case 'error':
-          setIsTranslating(false)
+          setIsTranslateRunning(false)
+          setIsBulkRunning(false)
           setIsSwapping(false)
           break
         case 'bulk-prefs-loaded':
@@ -945,6 +977,7 @@ function Plugin() {
           setHasUnsavedFontPrefs(false)
           setStyleMappings({})
           setSourceStyles([])
+          setAssumeEnglishSource(false)
           break
       }
     }
@@ -953,23 +986,41 @@ function Plugin() {
   }, [])
 
   const handleTranslate = () => {
-    setIsTranslating(true)
+    if (isBulkRunning) {
+      notifyInFigma('Please wait for bulk translate to finish before starting translate.', true)
+      return
+    }
+    if (isSwapping) {
+      notifyInFigma('Please wait for font swap to finish before starting translate.', true)
+      return
+    }
+    if (isTranslateRunning) return
+    setIsTranslateRunning(true)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'translate', targetLanguage, assumeEnglish: targetLanguage !== 'en',
+      type: 'translate', targetLanguage, assumeEnglish: assumeEnglishSource && targetLanguage !== 'en',
     }}, '*')
   }
 
   const handleBulkStressTest = () => {
+    if (isTranslateRunning) {
+      notifyInFigma('Please wait for translate to finish before starting bulk translate.', true)
+      return
+    }
+    if (isSwapping) {
+      notifyInFigma('Please wait for font swap to finish before starting bulk translate.', true)
+      return
+    }
+    if (isBulkRunning) return
     const activeBulkLanguages = bulkLanguages && bulkLanguages.length > 0
       ? bulkLanguages
       : DEFAULT_BULK_LANGUAGES
-    setIsTranslating(true)
+    setIsBulkRunning(true)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages,
+      type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages, assumeEnglish: assumeEnglishSource,
     }}, '*')
   }
 
@@ -987,6 +1038,15 @@ function Plugin() {
   }
 
   const handleFontSwap = () => {
+    if (isTranslateRunning) {
+      notifyInFigma('Please wait for translate to finish before starting font swap.', true)
+      return
+    }
+    if (isBulkRunning) {
+      notifyInFigma('Please wait for bulk translate to finish before starting font swap.', true)
+      return
+    }
+    if (isSwapping) return
     setIsSwapping(true)
     parent.postMessage({ pluginMessage: {
       type: 'font-swap', targetFont,
@@ -1074,8 +1134,8 @@ function Plugin() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
-                        {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
+                      <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslateRunning} onClick={handleTranslate}>
+                        {isTranslateRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
                       </Button>
                       <button
                         type="button"
@@ -1093,10 +1153,10 @@ function Plugin() {
                         <button
                           type="button"
                           className="flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-                          disabled={isTranslating}
+                          disabled={isBulkRunning}
                           onClick={handleBulkStressTest}
                         >
-                          {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : 'Bulk Translate'}
+                          {isBulkRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : 'Bulk Translate'}
                         </button>
                         <button
                           type="button"
@@ -1331,13 +1391,22 @@ function Plugin() {
         </div>
       </div>
       {page === 'translate' ? (
-        <div className="flex justify-start bg-background px-5 pb-2 pt-2">
+        <div className="flex items-center gap-4 bg-background px-5 pb-2 pt-2">
           <button
             type="button"
             className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
             onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
           >
             Reset Data
+          </button>
+          <button
+            type="button"
+            className={`text-[11px] underline transition-colors ${
+              assumeEnglishSource ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setAssumeEnglishSource(prev => !prev)}
+          >
+            Assume English: {assumeEnglishSource ? 'On' : 'Off'}
           </button>
         </div>
       ) : null}

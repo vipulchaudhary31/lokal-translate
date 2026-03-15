@@ -62,7 +62,7 @@
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com"
       ],
-      "reasoning": "Plugin needs API access for translation and Google Fonts for Outfit typeface"
+      "reasoning": "Plugin needs API access for translation and Google Fonts for the UI typeface."
     }
   }
 }
