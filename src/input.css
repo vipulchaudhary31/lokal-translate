@@ -9,7 +9,7 @@
   --card-foreground: oklch(0.2300 0.0038 106.6929);
   --popover: oklch(1.0000 0 0);
   --popover-foreground: oklch(0.2300 0.0038 106.6929);
-  --primary: oklch(0.2931 0 0);
+  --primary: #1d1d1b;
   --primary-foreground: oklch(0.9789 0.0013 106.4235);
   --secondary: oklch(0.9688 0.0066 106.5223);
   --secondary-foreground: oklch(0.3583 0.0084 106.8176);
@@ -199,12 +199,12 @@
   }
 
   .fade-scroll-y {
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .fade-scroll-x {
-    -webkit-mask-image: linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }

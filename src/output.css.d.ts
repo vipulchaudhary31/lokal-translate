@@ -11,8 +11,17 @@ declare const styles: {
   readonly "*:data-[slot=select-value]:items-center": string;
   readonly "*:data-[slot=select-value]:line-clamp-1": string;
   readonly "-bottom-12": string;
+  readonly "-bottom-[0px]": string;
+  readonly "-bottom-[2px]": string;
+  readonly "-bottom-[3px]": string;
+  readonly "-bottom-[5px]": string;
+  readonly "-bottom-[6px]": string;
+  readonly "-bottom-[7px]": string;
+  readonly "-bottom-[8px]": string;
   readonly "-left-12": string;
+  readonly "-mb-4": string;
   readonly "-ml-4": string;
+  readonly "-mt-3": string;
   readonly "-mt-4": string;
   readonly "-mx-1": string;
   readonly "-mx-5": string;
@@ -133,7 +142,12 @@ declare const styles: {
   readonly "auto-rows-min": string;
   readonly "basis-full": string;
   readonly "bg-(--color-bg)": string;
+  readonly "bg-[##2c2c2c]": string;
+  readonly "bg-[#2c2c2c]": string;
+  readonly "bg-[#D88A1F]": string;
+  readonly "bg-[#F78430]": string;
   readonly "bg-[#FCFBF8]": string;
+  readonly "bg-[#FD5C04]": string;
   readonly "bg-[#bf4e30]": string;
   readonly "bg-[#e8e8e8]": string;
   readonly "bg-[#f5f5f5]": string;
@@ -171,6 +185,7 @@ declare const styles: {
   readonly "bg-primary": string;
   readonly "bg-primary/10": string;
   readonly "bg-primary/20": string;
+  readonly "bg-primary/35": string;
   readonly "bg-primary/5": string;
   readonly "bg-primary/90": string;
   readonly "bg-secondary": string;
@@ -181,9 +196,12 @@ declare const styles: {
   readonly "bg-transparent": string;
   readonly "bg-white": string;
   readonly "block": string;
+  readonly "blur-[0.2px]": string;
   readonly "border": string;
   readonly "border-(--color-border)": string;
+  readonly "border-0": string;
   readonly "border-2": string;
+  readonly "border-[#FD5C04]": string;
   readonly "border-[#dddddd]": string;
   readonly "border-[#e8e8e8]": string;
   readonly "border-[#f0f0f0]": string;
@@ -191,6 +209,7 @@ declare const styles: {
   readonly "border-[rgba(0,0,0,0.04)]": string;
   readonly "border-accent/40": string;
   readonly "border-b": string;
+  readonly "border-b-[3px]": string;
   readonly "border-border": string;
   readonly "border-border/50": string;
   readonly "border-collapse": string;
@@ -633,6 +652,7 @@ declare const styles: {
   readonly "h-[10.566px]": string;
   readonly "h-[10.775px]": string;
   readonly "h-[10.786px]": string;
+  readonly "h-[10px]": string;
   readonly "h-[11.205px]": string;
   readonly "h-[11.311px]": string;
   readonly "h-[11.557px]": string;
@@ -647,6 +667,7 @@ declare const styles: {
   readonly "h-[12.591px]": string;
   readonly "h-[12.787px]": string;
   readonly "h-[12.95px]": string;
+  readonly "h-[12px]": string;
   readonly "h-[13.335px]": string;
   readonly "h-[13.368px]": string;
   readonly "h-[13.47px]": string;
@@ -658,6 +679,7 @@ declare const styles: {
   readonly "h-[15.491px]": string;
   readonly "h-[15.624px]": string;
   readonly "h-[15.844px]": string;
+  readonly "h-[15px]": string;
   readonly "h-[16.62px]": string;
   readonly "h-[16.718px]": string;
   readonly "h-[16.767px]": string;
@@ -847,6 +869,7 @@ declare const styles: {
   readonly "h-[8.743px]": string;
   readonly "h-[8.836px]": string;
   readonly "h-[82px]": string;
+  readonly "h-[8px]": string;
   readonly "h-[9.039px]": string;
   readonly "h-[9.242px]": string;
   readonly "h-[9.272px]": string;
@@ -902,6 +925,8 @@ declare const styles: {
   readonly "hover:ring-4": string;
   readonly "hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]": string;
   readonly "hover:shadow-[0_16px_30px_rgba(17,24,39,0.08),0_4px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "hover:shadow-[0_16px_32px_rgba(17,24,39,0.05),0_4px_12px_rgba(17,24,39,0.025)]": string;
+  readonly "hover:shadow-[0_18px_34px_rgba(17,24,39,0.06),0_6px_14px_rgba(17,24,39,0.035)]": string;
   readonly "hover:shadow-[inset_0_0_0_1px_rgba(23,23,23,0.06),0_12px_22px_rgba(17,24,39,0.06)]": string;
   readonly "hover:text-accent-foreground": string;
   readonly "hover:text-accent/80": string;
@@ -1891,6 +1916,7 @@ declare const styles: {
   readonly "left-[7.74px]": string;
   readonly "left-[7.81px]": string;
   readonly "left-[7.83px]": string;
+  readonly "left-[8%]": string;
   readonly "left-[8.09px]": string;
   readonly "left-[8.17px]": string;
   readonly "left-[8.18px]": string;
@@ -2017,9 +2043,11 @@ declare const styles: {
   readonly "overflow-auto": string;
   readonly "overflow-clip": string;
   readonly "overflow-hidden": string;
+  readonly "overflow-visible": string;
   readonly "overflow-x-auto": string;
   readonly "overflow-x-hidden": string;
   readonly "overflow-y-auto": string;
+  readonly "overflow-y-visible": string;
   readonly "p-0": string;
   readonly "p-0.5": string;
   readonly "p-1": string;
@@ -2035,6 +2063,7 @@ declare const styles: {
   readonly "pb-3": string;
   readonly "pb-4": string;
   readonly "pb-6": string;
+  readonly "pb-7": string;
   readonly "pb-[4px]": string;
   readonly "pb-[8px]": string;
   readonly "peer": string;
@@ -2275,6 +2304,7 @@ declare const styles: {
   readonly "right-[21.96px]": string;
   readonly "right-[21.97px]": string;
   readonly "right-[21.99px]": string;
+  readonly "right-[22%]": string;
   readonly "right-[22.01px]": string;
   readonly "right-[22.02px]": string;
   readonly "right-[22.03px]": string;
@@ -2595,6 +2625,7 @@ declare const styles: {
   readonly "rounded-[4px]": string;
   readonly "rounded-[8.75px]": string;
   readonly "rounded-[8px]": string;
+  readonly "rounded-[999px]": string;
   readonly "rounded-[inherit]": string;
   readonly "rounded-full": string;
   readonly "rounded-lg": string;
@@ -2621,12 +2652,20 @@ declare const styles: {
   readonly "self-start": string;
   readonly "shadow": string;
   readonly "shadow-[0_0_0_1px_hsl(var(--sidebar-border))]": string;
+  readonly "shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_12px_26px_rgba(17,24,39,0.06),0_2px_8px_rgba(17,24,39,0.04)]": string;
+  readonly "shadow-[0_12px_28px_rgba(17,24,39,0.04),0_2px_8px_rgba(17,24,39,0.02)]": string;
+  readonly "shadow-[0_12px_28px_rgba(17,24,39,0.10),0_4px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "shadow-[0_14px_30px_rgba(17,24,39,0.05),0_3px_10px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_14px_34px_rgba(17,24,39,0.08),0_3px_12px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[0_18px_34px_rgba(17,24,39,0.12),0_4px_12px_rgba(17,24,39,0.06)]": string;
+  readonly "shadow-[0_20px_42px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.025)]": string;
+  readonly "shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
+  readonly "shadow-[0_22px_46px_rgba(17,24,39,0.05),0_8px_20px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_24px_80px_rgba(0,0,0,0.28)]": string;
   readonly "shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[inset_0_0_0_1px_rgba(23,23,23,0.08),0_8px_18px_rgba(17,24,39,0.04)]": string;
+  readonly "shadow-[inset_1px_0_0_rgba(221,221,221,1),inset_-1px_0_0_rgba(221,221,221,1),0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
   readonly "shadow-card": string;
   readonly "shadow-input": string;
   readonly "shadow-lg": string;
@@ -2693,6 +2732,7 @@ declare const styles: {
   readonly "text-[13px]": string;
   readonly "text-[14px]": string;
   readonly "text-[16px]": string;
+  readonly "text-[20px]": string;
   readonly "text-[28px]": string;
   readonly "text-[32px]": string;
   readonly "text-[34px]": string;
@@ -3085,6 +3125,8 @@ declare const styles: {
   readonly "transform": string;
   readonly "transition": string;
   readonly "transition-[background-color,box-shadow,transform]": string;
+  readonly "transition-[box-shadow,border-color]": string;
+  readonly "transition-[box-shadow,transform]": string;
   readonly "transition-[color,box-shadow]": string;
   readonly "transition-[left,right,width]": string;
   readonly "transition-[margin,opacity]": string;
@@ -3136,9 +3178,12 @@ declare const styles: {
   readonly "w-8": string;
   readonly "w-9": string;
   readonly "w-[100px]": string;
+  readonly "w-[102px]": string;
   readonly "w-[108px]": string;
+  readonly "w-[118px]": string;
   readonly "w-[122.59%]": string;
   readonly "w-[145px]": string;
+  readonly "w-[15px]": string;
   readonly "w-[1px]": string;
   readonly "w-[260px]": string;
   readonly "w-[2px]": string;
@@ -3147,7 +3192,10 @@ declare const styles: {
   readonly "w-[360px]": string;
   readonly "w-[60px]": string;
   readonly "w-[64px]": string;
+  readonly "w-[80px]": string;
   readonly "w-[82px]": string;
+  readonly "w-[84px]": string;
+  readonly "w-[88px]": string;
   readonly "w-[90px]": string;
   readonly "w-[min(336px,calc(100vw-24px))]": string;
   readonly "w-[min(340px,95vw)]": string;

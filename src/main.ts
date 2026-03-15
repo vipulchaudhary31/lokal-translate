@@ -1718,6 +1718,7 @@ figma.ui.onmessage = async (msg) => {
           type: 'error', 
           message: 'Please select one or more layers or text to translate' 
         })
+        figma.notify('Please select one or more layers or text to translate', { error: true })
         return
       }
       
@@ -1796,6 +1797,7 @@ figma.ui.onmessage = async (msg) => {
           type: 'error', 
           message: 'No text found in selected items' 
         })
+        figma.notify('No text found in selected items', { error: true })
         return
       }
       
@@ -1993,6 +1995,7 @@ figma.ui.onmessage = async (msg) => {
         : [...BULK_LANGUAGES]
       if (bulkLangs.length === 0) {
         figma.ui.postMessage({ type: 'error', message: 'Please set up at least one language for bulk translate' })
+        figma.notify('Please set up at least one language for bulk translate', { error: true })
         return
       }
       const selection = figma.currentPage.selection
@@ -2002,6 +2005,7 @@ figma.ui.onmessage = async (msg) => {
       
       if (itemsToBulk.length === 0) {
         figma.ui.postMessage({ type: 'error', message: 'Please select one or more layers or text to run bulk translate' })
+        figma.notify('Please select one or more layers or text to run bulk translate', { error: true })
         return
       }
       
@@ -2165,6 +2169,7 @@ figma.ui.onmessage = async (msg) => {
       console.error('Bulk translate error:', error)
       const errMsg = getApiErrorMessage(error, 'Bulk Translation')
       figma.ui.postMessage({ type: 'error', message: errMsg })
+      figma.notify(`❌ ${errMsg}`, { error: true })
     }
   } else if (msg.type === 'get-styles-for-font') {
     try {
@@ -2402,6 +2407,7 @@ figma.ui.onmessage = async (msg) => {
           type: 'error', 
           message: 'Please select frames or text layers to swap fonts' 
         })
+        figma.notify('Please select frames or text layers to swap fonts', { error: true })
         return
       }
       
@@ -2428,6 +2434,7 @@ figma.ui.onmessage = async (msg) => {
           type: 'error', 
           message: 'No text found in selected frames or text layers' 
         })
+        figma.notify('No text found in selected frames or text layers', { error: true })
         return
       }
       
@@ -2500,10 +2507,12 @@ figma.ui.onmessage = async (msg) => {
       
     } catch (error) {
       console.error('Font swap error:', error)
+      const errMsg = `Error: ${(error as Error).message}`
       figma.ui.postMessage({ 
         type: 'error', 
-        message: `Error: ${(error as Error).message}` 
+        message: errMsg
       })
+      figma.notify(`❌ ${errMsg}`, { error: true })
     }
   }
 } 

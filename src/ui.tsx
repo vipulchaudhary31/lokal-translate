@@ -9,9 +9,6 @@ import { Label } from './components/ui/label'
 import { Separator } from './components/ui/separator'
 import {
   Loader2,
-  Type,
-  CheckCircle2,
-  AlertCircle,
   Info,
   Sparkles,
   ChevronDown,
@@ -22,6 +19,9 @@ import {
   Check,
   Link2,
   ArrowLeft,
+  SlidersHorizontal,
+  Languages,
+  CaseSensitive,
 } from 'lucide-react'
 import bengaliCardImage from '../assets/bengali.png'
 import gujaratiCardImage from '../assets/gujarati.png'
@@ -181,8 +181,8 @@ function LanguageCard({
       aria-pressed={selected}
       className={`relative flex h-[130px] w-[100px] shrink-0 flex-col items-center gap-1 rounded-[8px] pb-2 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15 ${
         selected
-          ? 'border-x border-b border-[#f0f0f0] bg-white shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]'
-          : 'bg-white'
+          ? 'border-x border-b border-transparent bg-white shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]'
+          : 'border-x border-b border-transparent bg-white'
       }`}
     >
       <div className="relative h-[82px] w-full overflow-hidden rounded-t-[8px]">
@@ -710,26 +710,6 @@ function StyleMappingModal({
   )
 }
 
-function StatusMessage({ message }: { message: string }) {
-  const isSuccess = message.includes('Successfully') || message.includes('Swapped') || message.includes('Translated') || message.includes('created!')
-  const isError = message.includes('failed') || message.includes('error') || message.includes('Error')
-
-  return (
-    <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm leading-relaxed ${
-      isSuccess ? 'border-primary/30 bg-primary/10 text-primary' :
-      isError ? 'border-destructive/30 bg-destructive/10 text-destructive' :
-      'border-border bg-muted/80 text-muted-foreground'
-    }`}>
-      {isSuccess
-        ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-        : isError
-          ? <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          : <Loader2 className="h-4 w-4 shrink-0 mt-0.5 animate-spin" />}
-      <span>{message}</span>
-    </div>
-  )
-}
-
 function BrandingStrip() {
   return (
     <div className="border-t border-[#dddddd] px-4 pt-3">
@@ -745,8 +725,6 @@ function BrandingStrip() {
 function Plugin() {
   const [targetLanguage, setTargetLanguage] = React.useState('te')
   const [isTranslating, setIsTranslating] = React.useState(false)
-  const [status, setStatus] = React.useState<string | null>(null)
-  const [assumeEnglish, setAssumeEnglish] = React.useState(true)
   const [weightMappingInfo, setWeightMappingInfo] = React.useState<string[]>([])
   const [showWeightMappings, setShowWeightMappings] = React.useState(false)
   const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(DEFAULT_BULK_LANGUAGES)
@@ -754,7 +732,6 @@ function Plugin() {
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
-  const [swapStatus, setSwapStatus] = React.useState<string | null>(null)
 
   const [fontPrefs, setFontPrefs] = React.useState<Record<string, string>>({})
   const [availableFonts, setAvailableFonts] = React.useState<string[]>([])
@@ -802,20 +779,15 @@ function Plugin() {
       if (!msg) return
       switch (msg.type) {
         case 'translation-started':
-          setStatus(`Starting translation of ${msg.count} text elements...`)
           break
         case 'translation-progress':
-          setStatus(`Translating ${msg.current}/${msg.total} texts...`)
           break
         case 'bulk-started':
-          setStatus(`Starting bulk stress test: ${msg.total} languages...`)
           break
         case 'bulk-progress':
-          setStatus(msg.message || `Language ${msg.current}/${msg.total}...`)
           break
         case 'bulk-complete':
           setIsTranslating(false)
-          setStatus(msg.message || 'Bulk stress test complete!')
           break
         case 'translation-complete':
           setIsTranslating(false)
@@ -823,45 +795,21 @@ function Plugin() {
             setWeightMappingInfo(msg.weightMappings)
             setShowWeightMappings(true)
           }
-          if (msg.errors > 0) {
-            const wt = msg.weightMappings?.length > 0 ? ` (${msg.weightMappings.length} weight mappings)` : ''
-            const errDetails = msg.errorMessages?.length ? `\n\nWhy: ${msg.errorMessages.join(' • ')}` : ''
-            setStatus(`Translated ${msg.count}/${msg.total} texts (${msg.errors} failed)${wt}${errDetails}`)
-          } else if (msg.count === 0) {
-            setStatus('No changes made. Text may already be in the target language.')
-          } else {
-            const wt = msg.weightMappings?.length > 0 ? ` (${msg.weightMappings.length} weight mappings)` : ''
-            setStatus(`Successfully translated all ${msg.count} text elements!${wt}`)
-          }
           break
         case 'translation-error':
-          setStatus(msg.message)
           break
         case 'font-swap-started':
-          setSwapStatus(`Starting font swap of ${msg.count} text elements...`)
           break
         case 'font-swap-progress':
-          setSwapStatus(`Swapping ${msg.current}/${msg.total} fonts...`)
           break
         case 'font-swap-complete':
           setIsSwapping(false)
-          if (msg.errors > 0 || msg.skipped > 0) {
-            const errorPart = msg.errors > 0 ? `${msg.errors} failed` : ''
-            const skippedPart = msg.skipped > 0 ? `${msg.skipped} skipped` : ''
-            const details = [errorPart, skippedPart].filter(Boolean).join(', ')
-            setSwapStatus(`Swapped ${msg.count} fonts (${details})`)
-          } else {
-            setSwapStatus(`Successfully swapped all ${msg.count} fonts!`)
-          }
           break
         case 'font-swap-error':
-          setSwapStatus(msg.message)
           break
         case 'error':
           setIsTranslating(false)
           setIsSwapping(false)
-          setStatus(msg.message)
-          setSwapStatus(msg.message)
           break
         case 'bulk-prefs-loaded':
           if (msg.bulkLanguages && msg.bulkLanguages.length > 0) {
@@ -915,11 +863,10 @@ function Plugin() {
 
   const handleTranslate = () => {
     setIsTranslating(true)
-    setStatus('Starting translation...')
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'translate', targetLanguage, assumeEnglish,
+      type: 'translate', targetLanguage, assumeEnglish: targetLanguage !== 'en',
     }}, '*')
   }
 
@@ -928,7 +875,6 @@ function Plugin() {
       ? bulkLanguages
       : DEFAULT_BULK_LANGUAGES
     setIsTranslating(true)
-    setStatus(`Starting bulk translate (${activeBulkLanguages.length} languages)...`)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
@@ -951,7 +897,6 @@ function Plugin() {
 
   const handleFontSwap = () => {
     setIsSwapping(true)
-    setSwapStatus('Starting font swap...')
     parent.postMessage({ pluginMessage: {
       type: 'font-swap', targetFont,
     }}, '*')
@@ -982,64 +927,66 @@ function Plugin() {
           <div className="space-y-4">
             {page === 'translate' || page === 'fontSwap' ? (
               <>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-6">
-                    <button
-                      type="button"
-                      onClick={() => setPage('translate')}
-                      className={`text-[28px] leading-none tracking-[-0.04em] transition-colors ${
-                        page === 'translate' ? 'font-semibold text-foreground' : 'font-medium text-[#C7CDD8]'
-                      }`}
-                    >
-                      Translate
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage('fontSwap')}
-                      className={`text-[28px] leading-none tracking-[-0.04em] transition-colors ${
-                        page === 'fontSwap' ? 'font-semibold text-foreground' : 'font-medium text-[#C7CDD8]'
-                      }`}
-                    >
-                      Swap
-                    </button>
-                  </div>
+                <div className="flex items-end gap-5">
                   <button
                     type="button"
-                    onClick={() => setPage('fontPrefs')}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Open font preferences"
-                    title="Font preferences"
+                    onClick={() => setPage('translate')}
+                    className={`relative flex items-center pb-2 text-[20px] leading-none tracking-[-0.04em] transition-colors ${
+                      page === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                    }`}
                   >
-                    <Type className="h-4 w-4" />
+                    <span>Translate</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage('fontSwap')}
+                    className={`relative flex items-center pb-2 text-[20px] leading-none tracking-[-0.04em] transition-colors ${
+                      page === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                    }`}
+                  >
+                    <span>Swap</span>
                   </button>
                 </div>
                 {page === 'translate' ? (
                   <>
-                    <div className="-mx-5 overflow-x-auto scrollbar-none fade-scroll-x px-5 pb-1">
-                      <div className="flex w-max gap-5">
-                        {languageOptions.map(option => (
-                          <LanguageCard
-                            key={option.value}
-                            option={option}
-                            selected={targetLanguage === option.value}
-                            onSelect={setTargetLanguage}
-                          />
-                        ))}
+                    <div className="-mx-5 pt-3 -mt-3 pb-4 -mb-4">
+                      <div className="overflow-x-auto overflow-y-visible scrollbar-none fade-scroll-x px-5">
+                        <div className="flex w-max gap-5">
+                          {languageOptions.map(option => (
+                            <LanguageCard
+                              key={option.value}
+                              option={option}
+                              selected={targetLanguage === option.value}
+                              onSelect={setTargetLanguage}
+                            />
+                          ))}
+                        </div>
                       </div>
+                     </div>
+
+                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and preserve original styles, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it completely untouched.
+                      </p>
                     </div>
 
-                    <div className="space-y-2.5">
-                      <label className="flex cursor-pointer items-center gap-2.5">
-                        <Checkbox checked={assumeEnglish} onCheckedChange={(c) => setAssumeEnglish(c === true)} />
-                        <span className="text-sm text-foreground select-none">Assume source is English (faster, fewer API calls)</span>
-                      </label>
+                    <div className="flex gap-2">
+                      <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
+                        {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
+                      </Button>
+                      <button
+                        type="button"
+                        className="flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
+                        onClick={() => setPage('fontPrefs')}
+                        aria-label="Open font preferences"
+                        title="Font preferences"
+                      >
+                        <CaseSensitive className="h-4 w-4" />
+                      </button>
                     </div>
 
-                    <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
-                      {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
-                    </Button>
-
-                    <div className="space-y-2">
+                    <div>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -1059,20 +1006,13 @@ function Plugin() {
                           aria-label="Open bulk translate preferences"
                           title="Bulk translate preferences"
                         >
-                          <ChevronDown className="h-4 w-4" />
+                          <Languages className="h-4 w-4" />
                         </button>
                       </div>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {bulkLanguages && bulkLanguages.length > 0
-                          ? bulkLanguages.map(c => bulkLanguageOptions.find(o => o.value === c)?.label || c).join(', ')
-                          : 'Choose preferred languages'}
-                      </p>
                     </div>
 
-                    {status && <StatusMessage message={status} />}
-
                     {showWeightMappings && weightMappingInfo.length > 0 && (
-                      <Card className="rounded-lg border border-border bg-card shadow-sm">
+                      <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                         <CardContent className="p-3">
                           <button className="flex w-full items-center justify-between" onClick={() => setShowWeightMappings(false)}>
                             <span className="text-xs font-medium text-foreground">Weight Mappings ({weightMappingInfo.length})</span>
@@ -1087,13 +1027,7 @@ function Plugin() {
                       </Card>
                     )}
 
-                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Translations are cached (24h) to reduce API costs. Duplicate text is translated once. <span className="font-medium text-foreground">&quot;hing&quot;</span> = transliteration; <span className="font-medium text-foreground">&quot;dnd&quot;</span> = preserve text & font; <span className="font-medium text-foreground">&quot;lma&quot;</span> = leave text completely untouched.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 flex-wrap"> 
                       <button
                         type="button"
                         className="text-[11px] text-muted-foreground hover:text-foreground underline"
@@ -1105,7 +1039,7 @@ function Plugin() {
                   </>
                 ) : (
                   <>
-                    <Card className="rounded-lg border border-border bg-card shadow-sm">
+                    <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                       <CardContent className="p-4 space-y-3">
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium text-muted-foreground">Convert to font</Label>
@@ -1125,8 +1059,6 @@ function Plugin() {
                     <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isSwapping} onClick={handleFontSwap}>
                       {isSwapping ? <><Loader2 className="h-4 w-4 animate-spin" /> Converting…</> : `Convert selection to ${targetFont}`}
                     </Button>
-
-                    {swapStatus && <StatusMessage message={swapStatus} />}
 
                     <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
                       <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
@@ -1165,7 +1097,7 @@ function Plugin() {
                   </p>
                 </div>
 
-                <Card className="rounded-lg border border-border bg-card shadow-sm">
+                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                   <CardContent className="p-4">
                     <div className="space-y-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                       {languageOptions.map(o => (
@@ -1263,7 +1195,7 @@ function Plugin() {
                   </p>
                 </div>
 
-                <Card className="rounded-lg border border-border bg-card shadow-sm">
+                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                   <CardContent className="p-4 space-y-4">
                     <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                       {bulkLanguageOptions.map(o => (
