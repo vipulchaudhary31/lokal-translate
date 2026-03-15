@@ -1,7 +1,7 @@
 import { showUI } from '@create-figma-plugin/utilities'
 
 export default function () {
-  const options = { width: 360, height: 520 }
+  const options = { width: 520, height: 700 }
   const data = { greeting: 'Lokal Translate is ready!' }
   showUI(options, data)
 }
@@ -920,6 +920,22 @@ function isHingNode(node: SceneNode, root?: SceneNode | null): boolean {
   return false
 }
 
+// Function to check if a node is inside an "lma" container (hard opt-out)
+// This intentionally ignores selection boundaries: if any ancestor is named "lma",
+// nothing should happen to nested text, even when explicitly selected.
+function isLmaNode(node: SceneNode): boolean {
+  let currentNode: BaseNode | null = node
+
+  while (currentNode && currentNode.type !== 'PAGE') {
+    if ('name' in currentNode && currentNode.name.toLowerCase() === 'lma') {
+      console.log(`LMA detected: "${node.name}" is inside LMA container "${currentNode.name}"`)
+      return true
+    }
+    currentNode = currentNode.parent
+  }
+  return false
+}
+
 // Function to check if a frame should be excluded from translation (DND)
 function isDndFrame(frame: FrameNode): boolean {
   return isDndNode(frame)
@@ -1811,7 +1827,7 @@ figma.ui.onmessage = async (msg) => {
       }
       
       // Find all text nodes and check their processing type
-      const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing'}> = []
+      const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}> = []
       
       // Process text nodes from containers (frame, group, section, component, instance)
       // Only check dnd/hing within the selected container - not in external ancestors
@@ -1820,11 +1836,15 @@ figma.ui.onmessage = async (msg) => {
           const textElement = textNode as TextNode
           const text = textElement.characters.trim()
           if (text.length > 0) {
-            const isHing = isHingNode(textElement, container)
-            const isDnd = !isHing && isDndNode(textElement, container)
+            const isLma = isLmaNode(textElement)
+            const isHing = !isLma && isHingNode(textElement, container)
+            const isDnd = !isLma && !isHing && isDndNode(textElement, container)
             
-            let nodeType: 'translate' | 'dnd' | 'hing' = 'translate'
-            if (isHing) {
+            let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+            if (isLma) {
+              nodeType = 'lma'
+              console.log('Found LMA text node for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+            } else if (isHing) {
               nodeType = 'hing'
               console.log('Found Hing text node for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             } else if (isDnd) {
@@ -1848,11 +1868,15 @@ figma.ui.onmessage = async (msg) => {
       textLayers.forEach(textLayer => {
         const text = textLayer.characters.trim()
         if (text.length > 0) {
-          const isHing = isHingNode(textLayer, textLayer)
-          const isDnd = !isHing && isDndNode(textLayer, textLayer)
+          const isLma = isLmaNode(textLayer)
+          const isHing = !isLma && isHingNode(textLayer, textLayer)
+          const isDnd = !isLma && !isHing && isDndNode(textLayer, textLayer)
           
-          let nodeType: 'translate' | 'dnd' | 'hing' = 'translate'
-          if (isHing) {
+          let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+          if (isLma) {
+            nodeType = 'lma'
+            console.log('Found selected LMA text layer for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
+          } else if (isHing) {
             nodeType = 'hing'
             console.log('Found selected Hing text layer for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           } else if (isDnd) {
@@ -1899,7 +1923,7 @@ figma.ui.onmessage = async (msg) => {
       for (let i = 0; i < textNodes.length; i++) {
         const { node, originalText, type } = textNodes[i]
         let sourceStyleBeforeTranslate: SourceStyle | null = null
-        if (type === 'translate') sourceStyleBeforeTranslate = getSourceStyleFromNode(node)
+        if (type === 'translate' || type === 'dnd') sourceStyleBeforeTranslate = getSourceStyleFromNode(node)
         
         try {
           // Load ALL fonts in the node (required for mixed-style text: strikethrough, underline, multiple fonts)
@@ -1909,7 +1933,8 @@ figma.ui.onmessage = async (msg) => {
           let action = 'Processing'
           if (type === 'translate') action = 'Translating'
           else if (type === 'hing') action = 'Transliterating'
-          else if (type === 'dnd') action = 'Preserving (DND)'
+          else if (type === 'dnd') action = 'Preserving text + applying font/style (DND)'
+          else if (type === 'lma') action = 'Skipping (LMA)'
           
           figma.ui.postMessage({
             type: 'translation-progress',
@@ -1950,10 +1975,18 @@ figma.ui.onmessage = async (msg) => {
               console.log(`⏭️ Empty transliteration; font applied for "${originalText.substring(0, 30)}..."`)
             }
           } else if (type === 'dnd') {
-            // DND = Do Not Disturb: preserve text AND font, no translation, no font change
+            // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
+            const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
+            if (!applied) {
+              const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
+              if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
+            }
             translatedCount++
-            console.log(`✅ DND: preserved text and font: "${originalText.substring(0, 30)}..."`)
+            console.log(`✅ DND: preserved text and applied font/style: "${originalText.substring(0, 30)}..."`)
             
+          } else if (type === 'lma') {
+            translatedCount++
+            console.log(`✅ LMA: skipped translation and font/style changes: "${originalText.substring(0, 30)}..."`)
           } else {
             const segmentResult = await translateWithStyledSegments(
               node, msg.targetLanguage, sourceLanguage, session
@@ -2004,9 +2037,9 @@ figma.ui.onmessage = async (msg) => {
           const loc = getNodeLocation(node)
           // Apply font/style even when API fails (e.g. "Source and target same" for numbers)
           let fontApplied = false
-          if (type !== 'dnd') {
+          if (type !== 'lma') {
             try {
-              const srcOverride = type === 'translate' ? sourceStyleBeforeTranslate ?? undefined : undefined
+              const srcOverride = (type === 'translate' || type === 'dnd') ? sourceStyleBeforeTranslate ?? undefined : undefined
               const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, srcOverride)
               if (!applied) await applyFontToTextNode(node, msg.targetLanguage)
               fontApplied = true
@@ -2099,7 +2132,7 @@ figma.ui.onmessage = async (msg) => {
       const allCreatedFrames: SceneNode[] = []
       
       // Pre-compute text types from ORIGINAL items (containers + text layers) before cloning
-      const typesByFrame: Array<Array<{path: number[], originalText: string, type: 'translate' | 'dnd' | 'hing'}>> = []
+      const typesByFrame: Array<Array<{path: number[], originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}>> = []
       for (const item of itemsToBulk) {
         const root = item
         const textWithPath = item.type === 'TEXT'
@@ -2108,10 +2141,12 @@ figma.ui.onmessage = async (msg) => {
             : []
           : collectTextNodesWithPath(root, [])
         const items = textWithPath.map(({ path, text, node }) => {
-          const isHing = isHingNode(node, root)
-          const isDnd = !isHing && isDndNode(node, root)
-          let nodeType: 'translate' | 'dnd' | 'hing' = 'translate'
-          if (isHing) nodeType = 'hing'
+          const isLma = isLmaNode(node)
+          const isHing = !isLma && isHingNode(node, root)
+          const isDnd = !isLma && !isHing && isDndNode(node, root)
+          let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+          if (isLma) nodeType = 'lma'
+          else if (isHing) nodeType = 'hing'
           else if (isDnd) nodeType = 'dnd'
           return { path, originalText: text, type: nodeType }
         })
@@ -2143,11 +2178,11 @@ figma.ui.onmessage = async (msg) => {
         }
         
         // Build text nodes from clones, matched by path to pre-computed types
-        const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing'}> = []
+        const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}> = []
         for (let fIdx = 0; fIdx < clonedContainers.length; fIdx++) {
           const cloned = clonedContainers[fIdx]
           const typeItems = typesByFrame[fIdx] || []
-          const typeByPath = new Map<string, 'translate' | 'dnd' | 'hing'>()
+          const typeByPath = new Map<string, 'translate' | 'dnd' | 'hing' | 'lma'>()
           typeItems.forEach(t => typeByPath.set(JSON.stringify(t.path), t.type))
           const cloneTextWithPath = collectTextNodesWithPath(cloned, [])
           for (const { path, text, node } of cloneTextWithPath) {
@@ -2163,7 +2198,7 @@ figma.ui.onmessage = async (msg) => {
         const bulkSession = createSessionCache()
         for (let i = 0; i < textNodes.length; i++) {
           const { node, originalText, type } = textNodes[i]
-          const bulkSourceStyleBefore = type === 'translate' ? getSourceStyleFromNode(node) : null
+          const bulkSourceStyleBefore = (type === 'translate' || type === 'dnd') ? getSourceStyleFromNode(node) : null
           try {
             await loadAllFontsForTextNode(node)
             if (type === 'hing') {
@@ -2177,7 +2212,11 @@ figma.ui.onmessage = async (msg) => {
                 if (!applied) await applyFontToTextNode(node, targetLang)
               }
             } else if (type === 'dnd') {
-              // DND = Do Not Disturb: preserve text AND font (clone already has original; no-op)
+              // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
+              const applied = await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
+              if (!applied) await applyFontToTextNode(node, targetLang)
+            } else if (type === 'lma') {
+              // LMA = Leave Me Alone: preserve text and font/style exactly as-is (clone already has original; no-op)
             } else {
               const segmentResult = await translateWithStyledSegments(node, targetLang, 'en', bulkSession)
               if (!segmentResult.success) {
@@ -2201,9 +2240,9 @@ figma.ui.onmessage = async (msg) => {
             const errMsg = getApiErrorMessage(err, 'Translation')
             console.error(`Bulk translate error (${langLabel}):`, errMsg, err)
             figma.ui.postMessage({ type: 'translation-error', message: `${langLabel}: ${errMsg}` })
-            if (type !== 'dnd') {
+            if (type !== 'lma') {
               try {
-                const srcOverride = type === 'translate' ? bulkSourceStyleBefore ?? undefined : undefined
+                const srcOverride = (type === 'translate' || type === 'dnd') ? bulkSourceStyleBefore ?? undefined : undefined
                 const applied = await applyUserDefinedStyleMapping(node, targetLang, srcOverride)
                 if (!applied) await applyFontToTextNode(node, targetLang)
               } catch (fontErr) {
@@ -2266,6 +2305,11 @@ figma.ui.onmessage = async (msg) => {
   } else if (msg.type === 'scan-selection') {
     try {
       const selection = figma.currentPage.selection
+      if (selection.length === 0) {
+        figma.ui.postMessage({ type: 'error', message: 'Please select a frame or text layer to scan styles' })
+        figma.notify('Please select a frame or text layer to scan styles', { error: true })
+        return
+      }
       const containers = selection.filter((n: SceneNode) => 'children' in n)
       const textLayers = selection.filter((n: SceneNode) => n.type === 'TEXT') as TextNode[]
       const seen = new Map<string, { font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount: number }>()
@@ -2452,13 +2496,13 @@ figma.ui.onmessage = async (msg) => {
       frames.forEach(frame => {
         frame.findAll(node => node.type === 'TEXT').forEach(textNode => {
           const textElement = textNode as TextNode
-          textNodes.push(textElement)
+          if (!isLmaNode(textElement)) textNodes.push(textElement)
         })
       })
       
       // Process directly selected text layers
       textLayers.forEach(textLayer => {
-        textNodes.push(textLayer)
+        if (!isLmaNode(textLayer)) textNodes.push(textLayer)
       })
       
       console.log(`Total text nodes found for font swap: ${textNodes.length}`)

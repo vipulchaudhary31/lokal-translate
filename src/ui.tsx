@@ -8,7 +8,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from './components/ui/select'
 import { Checkbox } from './components/ui/checkbox'
 import { Card, CardContent } from './components/ui/card'
@@ -20,9 +19,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  Sparkles,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
-  Settings2,
   Search,
   X,
   Check,
@@ -38,6 +38,7 @@ import punjabiCardImage from '../assets/punjabi.png'
 import selectedBgImage from '../assets/selected_bg_image.png'
 import tamilCardImage from '../assets/tamil.png'
 import teluguCardImage from '../assets/telugu.png'
+import brandingStrip from '../assets/branding-strip.svg'
 
 type LanguageArt =
   | { kind: 'emoji'; value: string }
@@ -130,6 +131,7 @@ const languageOptions: LanguageOption[] = [
   },
 ]
 const bulkLanguageOptions = languageOptions.filter(o => o.value !== 'en')
+const DEFAULT_BULK_LANGUAGES = ['te', 'ta', 'ml', 'kn', 'mr']
 
 // Default fonts per language (must match main.ts LANGUAGE_FONTS)
 const DEFAULT_LANGUAGE_FONTS: Record<string, string> = {
@@ -186,7 +188,7 @@ function LanguageCard({
       className={`relative flex h-[130px] w-[100px] shrink-0 flex-col items-center gap-1 rounded-[8px] pb-2 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15 ${
         selected
           ? 'border-x border-b border-[#f0f0f0] bg-white shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]'
-          : 'bg-[#f5f5f5]'
+          : 'bg-white'
       }`}
     >
       <div className="relative h-[82px] w-full overflow-hidden rounded-t-[8px]">
@@ -252,7 +254,7 @@ function FontPickerModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-[min(340px,95vw)] max-h-[85vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
+        className="w-[min(400px,92vw)] max-h-[88vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -288,7 +290,7 @@ function FontPickerModal({
             )}
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 max-h-[280px]">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none fade-scroll-y p-2 max-h-[280px]">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -363,6 +365,29 @@ function StyleMappingModal({
   if (!open) return null
 
   const langMap = styleMappings[lang] || {}
+  type DisplaySourceStyle = {
+    key: string
+    font: string
+    size: number
+    lh: number | null
+    weight: string
+    decoration?: string
+    segmentCount?: number
+  }
+
+  const mappedSourceStyles: DisplaySourceStyle[] = Object.keys(langMap).map((key) => {
+    const [font, sizeStr, lhStr, weight] = key.split('|')
+    const parsedSize = Number(sizeStr)
+    const parsedLineHeight = lhStr === 'auto' ? null : Number(lhStr)
+    return {
+      key,
+      font: font || 'Unknown',
+      size: Number.isFinite(parsedSize) ? parsedSize : 0,
+      lh: Number.isFinite(parsedLineHeight) ? parsedLineHeight : null,
+      weight: weight || 'Regular',
+    }
+  })
+  const displaySourceStyles: DisplaySourceStyle[] = sourceStyles.length > 0 ? sourceStyles : mappedSourceStyles
 
   const handleAutoApply = () => {
     if (availableStyles.length === 0 || sourceStyles.length === 0) return
@@ -382,11 +407,13 @@ function StyleMappingModal({
   }
 
   const canAutoApply = sourceStyles.length > 0 && availableStyles.length > 0
+  const hasDisplayRows = displaySourceStyles.length > 0
+  const scanButtonLabel = sourceStyles.length > 0 ? 'Rescan selection' : 'Scan selection'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-[min(360px,95vw)] max-h-[85vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
+        className="w-[min(560px,96vw)] max-h-[88vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -400,47 +427,49 @@ function StyleMappingModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
-          <p className="text-[11px] text-muted-foreground">
-            Map styles in your selection to {fontForLang} styles. Fetch loads target styles, Scan finds sources. Use Auto apply to pre-fill matches by size and weight. Decorative text is always skipped.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 text-xs flex-1 min-w-[100px]"
-              onClick={() => parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')}
-              title={`Load ${fontForLang} styles from this file (runs automatically when opened)`}
-            >
-              Fetch styles
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 text-xs flex-1 min-w-[100px]"
-              onClick={() => parent.postMessage({ pluginMessage: { type: 'scan-selection' } }, '*')}
-              title="Find source styles in your selection"
-            >
-              Scan selection
-            </Button>
-            {canAutoApply && (
-              <Button
-                size="sm"
-                className="h-8 text-xs flex-1 min-w-[100px]"
-                onClick={handleAutoApply}
-                title="Auto-match source styles to target by size and weight"
-              >
-                Auto apply
-              </Button>
-            )}
-          </div>
-          {sourceStyles.length > 0 ? (
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {sourceStyles.map((src) => {
+        <div className="p-4 space-y-4 flex-1 min-h-0 overflow-y-auto scrollbar-none fade-scroll-y">
+          <button
+            type="button"
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-background text-base font-medium text-foreground transition-colors hover:border-accent/40 hover:bg-muted/30"
+            onClick={() => parent.postMessage({ pluginMessage: { type: 'scan-selection' } }, '*')}
+            title="Find source styles in your selection"
+          >
+            <Search className="h-4 w-4" />
+            {scanButtonLabel}
+          </button>
+
+          {hasDisplayRows ? (
+            <>
+              <div className="flex items-center justify-end gap-4">
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')}
+                >
+                  Refetch styles
+                </Button>
+                {canAutoApply && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0 text-[13px] font-medium text-accent hover:text-accent/80"
+                    onClick={handleAutoApply}
+                    title="Auto-match source styles to target by size and weight"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Auto apply
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-3 max-h-[420px] overflow-y-auto scrollbar-none fade-scroll-y">
+                {displaySourceStyles.map((src) => {
                 const current = langMap[src.key] ?? ''
+                const selectedStyle = availableStyles.find(s => s.id === current)
                 return (
-                  <div key={src.key} className="flex items-center gap-2">
-                    <span className="text-[11px] truncate flex-1 min-w-0" title={src.key}>
+                  <div key={src.key} className="grid grid-cols-[180px_minmax(0,1fr)] items-start gap-4">
+                    <span className="line-clamp-2 pt-2 text-[12px] leading-5 text-foreground" title={src.key}>
                       {src.font} {src.size}px {src.weight}
                       {src.decoration ? ` (${src.decoration.toLowerCase()})` : ''}
                       {src.segmentCount && src.segmentCount > 1 ? ` (${src.segmentCount})` : ''}
@@ -449,7 +478,35 @@ function StyleMappingModal({
                       value={current || '__none__'}
                       onValueChange={(v) => onMappingChange(lang, src.key, v === '__none__' ? '' : v === 'skip' ? 'skip' : v)}
                     >
-                      <SelectTrigger className="h-7 text-[11px] w-36"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="min-h-[56px] w-full items-start px-3 py-2 text-left">
+                        {selectedStyle ? (
+                          <div className="min-w-0 pr-6 text-left">
+                            <div className="truncate text-[12px] leading-4 text-foreground">
+                              {selectedStyle.name}
+                            </div>
+                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                              {selectedStyle.sizeStr || '\u2014'}
+                            </div>
+                          </div>
+                        ) : current === 'skip' ? (
+                          <div className="min-w-0 pr-6 text-left">
+                            <div className="truncate text-[12px] leading-4 text-foreground">Skip</div>
+                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">No style applied</div>
+                          </div>
+                        ) : current ? (
+                          <div className="min-w-0 pr-6 text-left">
+                            <div className="truncate text-[12px] leading-4 text-foreground">Mapped style</div>
+                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">Refetch styles to preview details</div>
+                          </div>
+                        ) : (
+                          <div className="min-w-0 pr-6 text-left">
+                            <div className="truncate text-[12px] leading-4 text-foreground">No mapping</div>
+                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                              Select a target style
+                            </div>
+                          </div>
+                        )}
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">—</SelectItem>
                         <SelectItem value="skip">Skip</SelectItem>
@@ -462,16 +519,23 @@ function StyleMappingModal({
                     </Select>
                   </div>
                 )
-              })}
-            </div>
+                })}
+              </div>
+            </>
           ) : (
-            <p className="text-[11px] text-muted-foreground">Click &quot;Scan selection&quot; to find styles in your selection.</p>
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-5 text-center">
+              <p className="text-[12px] text-muted-foreground">
+                Select a frame or text layer, then scan to load source styles.
+              </p>
+            </div>
           )}
         </div>
-        <div className="p-4 border-t border-border flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1 h-8" onClick={onClose}>Cancel</Button>
-          <Button size="sm" className="flex-1 h-8" onClick={() => { onSave(); onClose(); }}>Save mappings</Button>
-        </div>
+        {hasDisplayRows && (
+          <div className="p-4 border-t border-border flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1 h-10" onClick={onClose}>Cancel</Button>
+            <Button size="sm" className="flex-1 h-10" onClick={() => { onSave(); onClose(); }}>Save mappings</Button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -497,16 +561,27 @@ function StatusMessage({ message }: { message: string }) {
   )
 }
 
+function BrandingStrip() {
+  return (
+    <div className="border-t border-[#dddddd] px-4 pt-3">
+      <img
+        src={brandingStrip}
+        alt="Crafted by Lokal School of Design"
+        className="mx-auto h-[auto] w-[300px]"
+      />
+    </div>
+  )
+}
+
 function Plugin() {
-  const [targetLanguage, setTargetLanguage] = React.useState('gu')
+  const [targetLanguage, setTargetLanguage] = React.useState('te')
   const [isTranslating, setIsTranslating] = React.useState(false)
   const [status, setStatus] = React.useState<string | null>(null)
   const [assumeEnglish, setAssumeEnglish] = React.useState(true)
   const [weightMappingInfo, setWeightMappingInfo] = React.useState<string[]>([])
   const [showWeightMappings, setShowWeightMappings] = React.useState(false)
-  const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(null)
-  const [showBulkSetup, setShowBulkSetup] = React.useState(false)
-  const [bulkSetupSelection, setBulkSetupSelection] = React.useState<string[]>(['hi', 'ta', 'te', 'kn', 'ml', 'mr', 'bn', 'pa', 'gu'])
+  const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(DEFAULT_BULK_LANGUAGES)
+  const [bulkSetupSelection, setBulkSetupSelection] = React.useState<string[]>(DEFAULT_BULK_LANGUAGES)
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -518,7 +593,8 @@ function Plugin() {
   const [fontsLoading, setFontsLoading] = React.useState(false)
   const [fontPickerForLang, setFontPickerForLang] = React.useState<string | null>(null)
   const [fontSwapPicker, setFontSwapPicker] = React.useState<'target' | null>(null)
-  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs'>('translate')
+  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs'>('translate')
+  const [hasUnsavedFontPrefs, setHasUnsavedFontPrefs] = React.useState(false)
   const [styleMappingModalLang, setStyleMappingModalLang] = React.useState<string | null>(null)
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
   const [sourceStyles, setSourceStyles] = React.useState<Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>>([])
@@ -624,13 +700,12 @@ function Plugin() {
             setBulkLanguages(msg.bulkLanguages)
             setBulkSetupSelection(msg.bulkLanguages)
           } else {
-            setBulkLanguages(null)
-            setBulkSetupSelection(bulkLanguageOptions.map(o => o.value))
+            setBulkLanguages(DEFAULT_BULK_LANGUAGES)
+            setBulkSetupSelection(DEFAULT_BULK_LANGUAGES)
           }
           break
         case 'bulk-prefs-saved':
           setBulkLanguages(msg.bulkLanguages || [])
-          setShowBulkSetup(false)
           break
         case 'font-list-loaded':
           setAvailableFonts(Array.isArray(msg.fonts) ? msg.fonts : [])
@@ -638,9 +713,11 @@ function Plugin() {
           break
         case 'font-prefs-loaded':
           setFontPrefs(msg.fontPrefs && typeof msg.fontPrefs === 'object' ? msg.fontPrefs : {})
+          setHasUnsavedFontPrefs(false)
           break
         case 'font-prefs-saved':
           setFontPrefs(msg.fontPrefs && typeof msg.fontPrefs === 'object' ? msg.fontPrefs : {})
+          setHasUnsavedFontPrefs(false)
           break
         case 'styles-for-font-loaded':
           setAvailableStyles(Array.isArray(msg.styles) ? msg.styles : [])
@@ -655,9 +732,10 @@ function Plugin() {
           setStyleMappings(msg.mappings && typeof msg.mappings === 'object' ? msg.mappings : {})
           break
         case 'hard-reset-complete':
-          setBulkLanguages(null)
-          setBulkSetupSelection(bulkLanguageOptions.map(o => o.value))
+          setBulkLanguages(DEFAULT_BULK_LANGUAGES)
+          setBulkSetupSelection(DEFAULT_BULK_LANGUAGES)
           setFontPrefs({})
+          setHasUnsavedFontPrefs(false)
           setStyleMappings({})
           setSourceStyles([])
           break
@@ -678,22 +756,23 @@ function Plugin() {
   }
 
   const handleBulkStressTest = () => {
-    if (!bulkLanguages || bulkLanguages.length === 0) {
-      setShowBulkSetup(true)
-      return
-    }
+    const activeBulkLanguages = bulkLanguages && bulkLanguages.length > 0
+      ? bulkLanguages
+      : DEFAULT_BULK_LANGUAGES
     setIsTranslating(true)
-    setStatus(`Starting bulk translate (${bulkLanguages.length} languages)...`)
+    setStatus(`Starting bulk translate (${activeBulkLanguages.length} languages)...`)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'bulk-translate-all', bulkLanguages,
+      type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages,
     }}, '*')
   }
 
   const handleBulkSetupSave = () => {
     if (bulkSetupSelection.length === 0) return
     parent.postMessage({ pluginMessage: { type: 'save-bulk-prefs', bulkLanguages: bulkSetupSelection } }, '*')
+    setBulkLanguages(bulkSetupSelection)
+    setPage('translate')
   }
 
   const toggleBulkLang = (code: string) => {
@@ -710,9 +789,21 @@ function Plugin() {
     }}, '*')
   }
 
+  const selectedLanguageLabel =
+    languageOptions.find(option => option.value === targetLanguage)?.label || 'Selected language'
+
+  const handleSaveFontPrefs = () => {
+    parent.postMessage({ pluginMessage: { type: 'save-font-prefs', fontPrefs } }, '*')
+  }
+
+  const hasStyleMappingsForLang = (lang: string): boolean =>
+    Object.values(styleMappings[lang] || {}).some(
+      value => typeof value === 'string' && value.trim().length > 0 && value !== 'skip'
+    )
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
         <div className="px-5 py-4">
           <div className="space-y-4">
             {page === 'translate' || page === 'fontSwap' ? (
@@ -750,7 +841,7 @@ function Plugin() {
                 </div>
                 {page === 'translate' ? (
                   <>
-                    <div className="-mx-5 overflow-x-auto px-5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="-mx-5 overflow-x-auto scrollbar-none fade-scroll-x px-5 pb-1">
                       <div className="flex w-max gap-5">
                         {languageOptions.map(option => (
                           <LanguageCard
@@ -771,77 +862,38 @@ function Plugin() {
                     </div>
 
                     <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isTranslating} onClick={handleTranslate}>
-                      {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : 'Translate Selection'}
+                      {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
                     </Button>
 
-                    <Separator className="my-2" />
-
-                    {showBulkSetup ? (
-                      <Card className="rounded-lg border border-border bg-card shadow-sm">
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Select bulk translate languages</span>
-                            <button
-                              type="button"
-                              className="text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => setShowBulkSetup(false)}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">Choose which languages to translate into. Source: English only.</p>
-                          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                            {bulkLanguageOptions.map(o => (
-                              <label key={o.value} className="flex cursor-pointer items-center gap-2">
-                                <Checkbox
-                                  checked={bulkSetupSelection.includes(o.value)}
-                                  onCheckedChange={() => toggleBulkLang(o.value)}
-                                />
-                                <span className="text-xs">{o.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                          <Button
-                            className="w-full h-9 rounded-md text-sm"
-                            disabled={bulkSetupSelection.length === 0}
-                            onClick={handleBulkSetupSave}
-                          >
-                            Save & use {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            className="flex-1 h-9 rounded-md text-sm font-medium"
-                            disabled={isTranslating}
-                            onClick={handleBulkStressTest}
-                          >
-                            {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : (bulkLanguages && bulkLanguages.length > 0 ? `Bulk Translate (${bulkLanguages.length} languages)` : 'Set up bulk translate')}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 shrink-0 rounded-md"
-                            disabled={isTranslating}
-                            onClick={() => {
-                              setBulkSetupSelection(bulkLanguages && bulkLanguages.length > 0 ? bulkLanguages : bulkLanguageOptions.map(o => o.value))
-                              setShowBulkSetup(true)
-                            }}
-                            title="Edit languages"
-                          >
-                            <Settings2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          {bulkLanguages && bulkLanguages.length > 0
-                            ? `Duplicates frames and translates to: ${bulkLanguages.map(c => bulkLanguageOptions.find(o => o.value === c)?.label || c).join(', ')}. Source: English only.`
-                            : 'Click to set up your preferred languages, then run. Source: English only.'}
-                        </p>
-                      </>
-                    )}
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                          disabled={isTranslating}
+                          onClick={handleBulkStressTest}
+                        >
+                          {isTranslating ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : 'Bulk Translate'}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => {
+                            setBulkSetupSelection(bulkLanguages && bulkLanguages.length > 0 ? bulkLanguages : DEFAULT_BULK_LANGUAGES)
+                            setPage('bulkPrefs')
+                          }}
+                          aria-label="Open bulk translate preferences"
+                          title="Bulk translate preferences"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {bulkLanguages && bulkLanguages.length > 0
+                          ? bulkLanguages.map(c => bulkLanguageOptions.find(o => o.value === c)?.label || c).join(', ')
+                          : 'Choose preferred languages'}
+                      </p>
+                    </div>
 
                     {status && <StatusMessage message={status} />}
 
@@ -852,7 +904,7 @@ function Plugin() {
                             <span className="text-xs font-medium text-foreground">Weight Mappings ({weightMappingInfo.length})</span>
                             <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
                           </button>
-                          <div className="mt-2 max-h-20 overflow-y-auto space-y-1">
+                          <div className="mt-2 max-h-20 overflow-y-auto scrollbar-none fade-scroll-y space-y-1">
                             {weightMappingInfo.map((m, i) => (
                               <p key={i} className="text-xs font-mono text-muted-foreground leading-relaxed">{m}</p>
                             ))}
@@ -868,13 +920,6 @@ function Plugin() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                        onClick={() => parent.postMessage({ pluginMessage: { type: 'clear-cache' } }, '*')}
-                      >
-                        Clear translation cache
-                      </button>
                       <button
                         type="button"
                         className="text-[11px] text-muted-foreground hover:text-foreground underline"
@@ -923,7 +968,7 @@ function Plugin() {
                   </>
                 )}
               </>
-            ) : (
+            ) : page === 'fontPrefs' ? (
               <>
                 <div className="flex items-center justify-between">
                   <button
@@ -952,10 +997,14 @@ function Plugin() {
                 </div>
 
                 <Card className="rounded-lg border border-border bg-card shadow-sm">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                  <CardContent className="p-4">
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                       {languageOptions.map(o => (
                         <div key={o.value} className="flex items-center gap-2">
+                          {(() => {
+                            const hasMappings = hasStyleMappingsForLang(o.value)
+                            return (
+                              <>
                           <span className="text-xs truncate w-20">{o.label}</span>
                           <button
                             type="button"
@@ -966,20 +1015,103 @@ function Plugin() {
                           </button>
                           <button
                             type="button"
-                            className="shrink-0 h-8 w-8 rounded-md border border-input bg-background flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                            className={`relative shrink-0 h-8 w-8 rounded-md border bg-background flex items-center justify-center transition-colors ${
+                              hasMappings
+                                ? 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/15'
+                                : 'border-input text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
                             onClick={() => setStyleMappingModalLang(o.value)}
-                            title={`Style mappings for ${o.label}`}
+                            title={hasMappings ? `Style mappings applied for ${o.label}` : `Style mappings for ${o.label}`}
                           >
+                            {hasMappings && (
+                              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
+                            )}
                             <Link2 className="h-3.5 w-3.5" />
                           </button>
+                              </>
+                            )
+                          })()}
                         </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 rounded-md text-sm"
+                    onClick={() => {
+                      setFontPrefs({})
+                      setHasUnsavedFontPrefs(true)
+                    }}
+                  >
+                    Reset to default fonts
+                  </Button>
+                  <Button
+                    className="w-full h-9 rounded-md text-sm"
+                    onClick={handleSaveFontPrefs}
+                    disabled={!hasUnsavedFontPrefs}
+                  >
+                    {hasUnsavedFontPrefs ? 'Save font preferences' : 'Font preferences saved'}
+                  </Button>
+                  {hasUnsavedFontPrefs && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Save before translating to apply your updated font choices.
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage('translate')}
+                    className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setPage('translate')}
+                    aria-label="Close bulk translate preferences"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Bulk translate preferences</h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    Choose the languages used by bulk translate. These are saved for later runs.
+                  </p>
+                </div>
+
+                <Card className="rounded-lg border border-border bg-card shadow-sm">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+                      {bulkLanguageOptions.map(o => (
+                        <label
+                          key={o.value}
+                          className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted/40"
+                        >
+                          <Checkbox
+                            checked={bulkSetupSelection.includes(o.value)}
+                            onCheckedChange={() => toggleBulkLang(o.value)}
+                          />
+                          <span className="truncate text-xs">{o.label}</span>
+                        </label>
                       ))}
                     </div>
                     <Button
                       className="w-full h-9 rounded-md text-sm"
-                      onClick={() => parent.postMessage({ pluginMessage: { type: 'save-font-prefs', fontPrefs } }, '*')}
+                      disabled={bulkSetupSelection.length === 0}
+                      onClick={handleBulkSetupSave}
                     >
-                      Save font preferences
+                      Save {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1002,6 +1134,8 @@ function Plugin() {
               }}
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
+
+            <BrandingStrip />
           </div>
         </div>
       </div>
@@ -1020,6 +1154,7 @@ function Plugin() {
             setTargetFont(font)
           } else if (fontPickerForLang) {
             setFontPrefs(p => ({ ...p, [fontPickerForLang]: font }))
+            setHasUnsavedFontPrefs(true)
           }
           setFontPickerForLang(null)
           setFontSwapPicker(null)
@@ -1030,18 +1165,18 @@ function Plugin() {
   )
 }
 
-function loadOutfitFont() {
+function loadThemeFonts() {
   if (typeof document === 'undefined') return
-  if (document.querySelector('link[data-font="outfit"]')) return
+  if (document.querySelector('link[data-font="dm-sans"]')) return
   const link = document.createElement('link')
   link.rel = 'stylesheet'
-  link.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap'
-  link.setAttribute('data-font', 'outfit')
+  link.href = 'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Text:ital@0;1&display=swap'
+  link.setAttribute('data-font', 'dm-sans')
   document.head.appendChild(link)
 }
 
 export default function (rootNode: HTMLElement, _data: { greeting: string }) {
-  loadOutfitFont()
+  loadThemeFonts()
   const root = ReactDOM.createRoot(rootNode)
   root.render(<Plugin />)
 }
