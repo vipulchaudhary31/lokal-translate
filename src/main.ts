@@ -7,7 +7,7 @@ export default function () {
 }
 
 // Sarvam AI API configuration
-const SARVAM_API_KEY = 'sk_cwbomeig_SMQgMWeXLkfon2hEfR7bnP7Q'
+const SARVAM_API_KEY = 'sk_a9leh764_1SnbiQW1DSqavj2miglnZngz'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
@@ -126,6 +126,46 @@ const LANGUAGE_FONTS = {
   'kn': 'Noto Sans Kannada UI',    // Kannada
   'ml': 'Noto Sans Malayalam UI',  // Malayalam
   'en': 'Inter'                    // English/Latin
+}
+
+const FONT_FAMILY_ALIASES: Record<string, string[]> = {
+  'Noto Sans Gurmukhi UI': ['Noto Sans Gurmukhi'],
+  'Noto Sans Gurmukhi': ['Noto Sans Gurmukhi UI'],
+}
+
+const loadedFontCache = new Set<string>()
+const failedFontCache = new Set<string>()
+
+function fontCacheKey(font: FontName): string {
+  return `${font.family}__${font.style}`
+}
+
+function getFontFamilyCandidates(family: string): string[] {
+  return Array.from(new Set([family, ...(FONT_FAMILY_ALIASES[family] || [])]))
+}
+
+async function loadFontCached(font: FontName): Promise<boolean> {
+  const key = fontCacheKey(font)
+  if (loadedFontCache.has(key)) return true
+  if (failedFontCache.has(key)) return false
+  try {
+    await figma.loadFontAsync(font)
+    loadedFontCache.add(key)
+    return true
+  } catch {
+    failedFontCache.add(key)
+    return false
+  }
+}
+
+async function resolveAvailableFont(families: string[], styles: string[]): Promise<FontName | null> {
+  for (const family of families) {
+    for (const style of styles) {
+      const candidate: FontName = { family, style: style || 'Regular' }
+      if (await loadFontCached(candidate)) return candidate
+    }
+  }
+  return null
 }
 
 // Font prefs cache (loaded at start of translate, updated on save)

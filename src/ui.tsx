@@ -17,7 +17,7 @@ import {
   Search,
   X,
   Check,
-  Link2,
+  Link,
   ArrowLeft,
   SlidersHorizontal,
   Languages,
@@ -32,7 +32,8 @@ import punjabiCardImage from '../assets/punjabi.png'
 import selectedBgImage from '../assets/selected_bg_image.png'
 import tamilCardImage from '../assets/tamil.png'
 import teluguCardImage from '../assets/telugu.png'
-import brandingStrip from '../assets/branding-strip.svg'
+import brandingOne from '../assets/branding-1.png'
+import brandingTwo from '../assets/branding-2.png'
 
 type LanguageArt =
   | { kind: 'emoji'; value: string }
@@ -169,44 +170,53 @@ function LanguageCard({
   option,
   selected,
   onSelect,
+  buttonRef,
 }: {
   option: LanguageOption
   selected: boolean
   onSelect: (value: string) => void
+  buttonRef?: (node: HTMLButtonElement | null) => void
 }) {
   return (
     <button
       type="button"
+      ref={buttonRef}
       onClick={() => onSelect(option.value)}
       aria-pressed={selected}
-      className={`relative flex h-[130px] w-[100px] shrink-0 flex-col items-center gap-1 rounded-[8px] pb-2 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15 ${
-        selected
-          ? 'border-x border-b border-transparent bg-white shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]'
-          : 'border-x border-b border-transparent bg-white'
-      }`}
+      className="relative h-[130px] w-[100px] shrink-0 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15"
     >
-      <div className="relative h-[82px] w-full overflow-hidden rounded-t-[8px]">
-        {selected ? (
-          <img
-            src={selectedBgImage}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-        <LanguageCardArt art={option.art} selected={selected} />
-      </div>
-      <div className="flex flex-col items-center text-center leading-none">
+      <div
+        className={`relative z-10 flex h-full flex-col items-center gap-1 overflow-hidden rounded-[8px] bg-white pb-2 [backface-visibility:hidden] [transform:translateZ(0)] ${
+          selected ? 'border-x border-b border-[#f0f0f0]' : 'border-x border-b border-transparent'
+        }`}
+        style={{ clipPath: 'inset(0 round 8px)' }}
+      >
         <div
-          className={`text-[13px] leading-5 ${selected ? 'text-[#171717]' : 'text-[rgba(23,23,23,0.65)]'} ${
-            selected
-              ? option.selectedNativeClassName || `${option.nativeClassName} font-medium`
-              : option.nativeClassName
-          }`}
+          className={`relative h-[82px] overflow-hidden rounded-t-[8px] ${selected ? '-mx-px w-[calc(100%+2px)]' : 'w-full'}`}
+          style={{ clipPath: 'inset(0 round 8px 8px 0 0)' }}
         >
-          {option.scriptLabel}
+          {selected ? (
+            <img
+              src={selectedBgImage}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : null}
+          <LanguageCardArt art={option.art} selected={selected} />
         </div>
-        <div className="w-[60px] font-sans text-[11px] leading-4 text-[rgba(23,23,23,0.65)]">
-          {option.label}
+        <div className="flex w-full flex-col items-center text-center leading-none">
+          <div
+            className={`text-[13px] leading-5 ${selected ? 'text-[#171717]' : 'text-[rgba(23,23,23,0.65)]'} ${
+              selected
+                ? option.selectedNativeClassName || `${option.nativeClassName} font-medium`
+                : option.nativeClassName
+            }`}
+          >
+            {option.scriptLabel}
+          </div>
+          <div className="w-[60px] font-sans text-[11px] leading-4 text-[rgba(23,23,23,0.65)]">
+            {option.label}
+          </div>
         </div>
       </div>
     </button>
@@ -713,11 +723,41 @@ function StyleMappingModal({
 function BrandingStrip() {
   return (
     <div className="border-t border-[#dddddd] px-4 pt-3">
-      <img
-        src={brandingStrip}
-        alt="Crafted by Lokal School of Design"
-        className="mx-auto h-[auto] w-[300px]"
-      />
+      <div className="mx-auto grid w-full max-w-[520px] grid-cols-[1fr_auto_1fr] items-end gap-4">
+        <a
+          href="https://medium.com/lokal-design"
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-[29px] flex-col items-center justify-between justify-self-center"
+        >
+          <p className="text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
+            Made with ♡
+          </p>
+          <img
+            src={brandingOne}
+            alt="Lokal School of Design"
+            className="block h-[17px] w-auto max-w-none"
+          />
+        </a>
+
+        <div className="h-[29px] w-px bg-[rgba(97,96,97,0.16)]" />
+
+        <a
+          href="https://www.sarvam.ai/blogs/sarvam-translate"
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-[29px] w-[84px] flex-col items-center justify-between justify-self-center"
+        >
+          <p className="text-center text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
+            Translations using
+          </p>
+          <img
+            src={brandingTwo}
+            alt="Sarvam"
+            className="block h-[16px] w-auto max-w-none"
+          />
+        </a>
+      </div>
     </div>
   )
 }
@@ -744,6 +784,57 @@ function Plugin() {
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
   const [sourceStyles, setSourceStyles] = React.useState<Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>>([])
   const [styleMappings, setStyleMappings] = React.useState<Record<string, Record<string, string>>>({})
+  const cardRailWrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const cardRailViewportRef = React.useRef<HTMLDivElement | null>(null)
+  const cardRefs = React.useRef<Record<string, HTMLButtonElement | null>>({})
+  const [selectedCardShadow, setSelectedCardShadow] = React.useState<null | {
+    left: number
+    top: number
+    width: number
+    height: number
+  }>(null)
+
+  const updateSelectedCardShadow = React.useCallback(() => {
+    const wrapper = cardRailWrapperRef.current
+    const selectedCard = cardRefs.current[targetLanguage]
+    if (!wrapper || !selectedCard) {
+      setSelectedCardShadow(null)
+      return
+    }
+
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const cardRect = selectedCard.getBoundingClientRect()
+
+    setSelectedCardShadow({
+      left: cardRect.left - wrapperRect.left,
+      top: cardRect.top - wrapperRect.top,
+      width: cardRect.width,
+      height: cardRect.height,
+    })
+  }, [targetLanguage])
+
+  React.useLayoutEffect(() => {
+    updateSelectedCardShadow()
+
+    const viewport = cardRailViewportRef.current
+    const wrapper = cardRailWrapperRef.current
+    const selectedCard = cardRefs.current[targetLanguage]
+    const resizeObserver = new ResizeObserver(() => updateSelectedCardShadow())
+
+    if (viewport) {
+      viewport.addEventListener('scroll', updateSelectedCardShadow, { passive: true })
+      resizeObserver.observe(viewport)
+    }
+    if (wrapper) resizeObserver.observe(wrapper)
+    if (selectedCard) resizeObserver.observe(selectedCard)
+    window.addEventListener('resize', updateSelectedCardShadow)
+
+    return () => {
+      if (viewport) viewport.removeEventListener('scroll', updateSelectedCardShadow)
+      window.removeEventListener('resize', updateSelectedCardShadow)
+      resizeObserver.disconnect()
+    }
+  }, [targetLanguage, updateSelectedCardShadow])
 
   const effectiveFontForLang = (lang: string): string => {
     const userChoice = fontPrefs[lang]
@@ -920,18 +1011,20 @@ function Plugin() {
       value => typeof value === 'string' && value.trim().length > 0 && value !== 'skip'
     )
 
+  const isDedicatedPrefsPage = page === 'fontPrefs' || page === 'bulkPrefs'
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
-        <div className="px-5 py-4">
-          <div className="space-y-4">
+      <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none'}`}>
+        <div className={`px-5 py-4 ${isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
+          <div className={isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-4'}>
             {page === 'translate' || page === 'fontSwap' ? (
-              <>
+              <div className="space-y-[10px] pt-1">
                 <div className="flex items-end gap-5">
                   <button
                     type="button"
                     onClick={() => setPage('translate')}
-                    className={`relative flex items-center pb-2 text-[20px] leading-none tracking-[-0.04em] transition-colors ${
+                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
                       page === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                     }`}
                   >
@@ -940,7 +1033,7 @@ function Plugin() {
                   <button
                     type="button"
                     onClick={() => setPage('fontSwap')}
-                    className={`relative flex items-center pb-2 text-[20px] leading-none tracking-[-0.04em] transition-colors ${
+                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
                       page === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                     }`}
                   >
@@ -948,27 +1041,36 @@ function Plugin() {
                   </button>
                 </div>
                 {page === 'translate' ? (
-                  <>
-                    <div className="-mx-5 pt-3 -mt-3 pb-4 -mb-4">
-                      <div className="overflow-x-auto overflow-y-visible scrollbar-none fade-scroll-x px-5">
-                        <div className="flex w-max gap-5">
+                  <div className="space-y-4">
+                    <div ref={cardRailWrapperRef} className="relative z-10 -mx-5">
+                      {selectedCardShadow ? (
+                        <span
+                          className="pointer-events-none absolute rounded-[8px] shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]
+"
+                          style={{
+                            left: `${selectedCardShadow.left}px`,
+                            top: `${selectedCardShadow.top}px`,
+                            width: `${selectedCardShadow.width}px`,
+                            height: `${selectedCardShadow.height}px`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <div ref={cardRailViewportRef} className="overflow-x-auto scrollbar-none fade-scroll-x px-5">
+                        <div className="flex w-max gap-5 pt-0 pb-1">
                           {languageOptions.map(option => (
                             <LanguageCard
                               key={option.value}
                               option={option}
                               selected={targetLanguage === option.value}
                               onSelect={setTargetLanguage}
+                              buttonRef={node => {
+                                cardRefs.current[option.value] = node
+                              }}
                             />
                           ))}
                         </div>
                       </div>
-                     </div>
-
-                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and preserve original styles, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it completely untouched.
-                      </p>
                     </div>
 
                     <div className="flex gap-2">
@@ -1011,6 +1113,13 @@ function Plugin() {
                       </div>
                     </div>
 
+                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and preserve original styles, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it alone.
+                      </p>
+                    </div>
+
                     {showWeightMappings && weightMappingInfo.length > 0 && (
                       <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                         <CardContent className="p-3">
@@ -1026,23 +1135,13 @@ function Plugin() {
                         </CardContent>
                       </Card>
                     )}
-
-                    <div className="flex items-center gap-3 flex-wrap"> 
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                        onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
-                      >
-                        Hard reset
-                      </button>
-                    </div>
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="space-y-4">
                     <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                       <CardContent className="p-4 space-y-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium text-muted-foreground">Convert to font</Label>
+                        <div className="space-y-0">
+                          <Label className="mb-[7px] block text-xs font-medium text-muted-foreground">Convert to font</Label>
                           <button
                             type="button"
                             className="w-full flex items-center justify-between gap-2 h-9 px-3 rounded-md border border-input bg-background text-left text-sm truncate hover:bg-muted transition-colors"
@@ -1063,15 +1162,15 @@ function Plugin() {
                     <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
                       <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Select text layers, choose a font, and convert. All selected text gets the new font; weights are preserved when possible. <span className="font-medium text-foreground">&quot;lma&quot;</span> stays untouched.
+                        Rename a layer to <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it alone.
                       </p>
                     </div>
-                  </>
+                  </div>
                 )}
-              </>
+              </div>
             ) : page === 'fontPrefs' ? (
-              <>
-                <div className="flex items-center justify-between">
+              <div className="flex min-h-0 flex-1 flex-col gap-4">
+                <div className="flex items-center">
                   <button
                     type="button"
                     onClick={() => setPage('translate')}
@@ -1080,26 +1179,18 @@ function Plugin() {
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Back
                   </button>
-                  <button
-                    type="button"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={() => setPage('translate')}
-                    aria-label="Close font preferences"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
 
                 <div className="space-y-1">
-                  <h2 className="text-base font-semibold text-foreground">Font preferences</h2>
+                  <h2 className="text-base font-semibold text-foreground">Font Preference</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Choose a preferred font per language. If a font is unavailable, the plugin falls back to its default.
+                    Select a font to show in the translation result frame
                   </p>
                 </div>
 
-                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                  <CardContent className="p-4">
-                    <div className="space-y-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+                <Card className="min-h-0 flex-1 rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                  <CardContent className="flex h-full flex-col p-4">
+                    <div className="flex-1 space-y-2 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                       {languageOptions.map(o => (
                         <div key={o.value} className="flex items-center gap-2">
                           {(() => {
@@ -1118,16 +1209,16 @@ function Plugin() {
                             type="button"
                             className={`relative shrink-0 h-8 w-8 rounded-md border bg-background flex items-center justify-center transition-colors ${
                               hasMappings
-                                ? 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/15'
+                                ? 'border-input text-[#1f9d55] hover:bg-muted'
                                 : 'border-input text-muted-foreground hover:bg-muted hover:text-foreground'
                             }`}
                             onClick={() => openStyleMappingModal(o.value)}
                             title={hasMappings ? `Style mappings applied for ${o.label}` : `Style mappings for ${o.label}`}
                           >
                             {hasMappings && (
-                              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
+                              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#1f9d55] ring-1 ring-white" />
                             )}
-                            <Link2 className="h-3.5 w-3.5" />
+                            <Link className="h-3.5 w-3.5" />
                           </button>
                               </>
                             )
@@ -1138,7 +1229,7 @@ function Plugin() {
                   </CardContent>
                 </Card>
 
-                <div className="space-y-2">
+                <div className="mt-1 space-y-2">
                   <Button
                     variant="outline"
                     className="w-full h-9 rounded-md text-sm"
@@ -1166,10 +1257,10 @@ function Plugin() {
                     </p>
                   )}
                 </div>
-              </>
+              </div>
             ) : (
-              <>
-                <div className="flex items-center justify-between">
+              <div className="flex min-h-0 flex-1 flex-col gap-4">
+                <div className="flex items-center">
                   <button
                     type="button"
                     onClick={() => setPage('translate')}
@@ -1178,30 +1269,22 @@ function Plugin() {
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Back
                   </button>
-                  <button
-                    type="button"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={() => setPage('translate')}
-                    aria-label="Close bulk translate preferences"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
 
                 <div className="space-y-1">
-                  <h2 className="text-base font-semibold text-foreground">Bulk translate preferences</h2>
+                  <h2 className="text-base font-semibold text-foreground">Bulk Translate Preferences</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Choose the languages used by bulk translate. These are saved for later runs.
+                    Choose the languages to translate in when testing in bulk.
                   </p>
                 </div>
 
-                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                  <CardContent className="p-4 space-y-4">
-                    <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+                <Card className="min-h-0 flex-1 rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                  <CardContent className="flex h-full flex-col p-4">
+                    <div className="grid auto-rows-min content-start items-start flex-1 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                       {bulkLanguageOptions.map(o => (
                         <label
                           key={o.value}
-                          className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted/40"
+                          className="flex h-fit items-center gap-2 rounded-md px-3 py-1.5 text-sm hover:bg-muted/30"
                         >
                           <Checkbox
                             checked={bulkSetupSelection.includes(o.value)}
@@ -1211,16 +1294,19 @@ function Plugin() {
                         </label>
                       ))}
                     </div>
-                    <Button
-                      className="w-full h-9 rounded-md text-sm"
-                      disabled={bulkSetupSelection.length === 0}
-                      onClick={handleBulkSetupSave}
-                    >
-                      Save {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
-                    </Button>
                   </CardContent>
                 </Card>
-              </>
+
+                <div className="mt-1">
+                  <Button
+                    className="w-full h-9 rounded-md text-sm"
+                    disabled={bulkSetupSelection.length === 0}
+                    onClick={handleBulkSetupSave}
+                  >
+                    Save {bulkSetupSelection.length} language{bulkSetupSelection.length !== 1 ? 's' : ''}
+                  </Button>
+                </div>
+              </div>
             )}
             <StyleMappingModal
               open={styleMappingModalLang !== null}
@@ -1240,10 +1326,21 @@ function Plugin() {
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
 
-            <BrandingStrip />
+            {(page === 'translate' || page === 'fontSwap') ? <BrandingStrip /> : null}
           </div>
         </div>
       </div>
+      {page === 'translate' ? (
+        <div className="flex justify-start bg-background px-5 pb-2 pt-2">
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+            onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
+          >
+            Reset Data
+          </button>
+        </div>
+      ) : null}
 
       <FontPickerModal
         open={fontPickerForLang !== null || fontSwapPicker !== null}
