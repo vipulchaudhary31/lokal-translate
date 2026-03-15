@@ -3,12 +3,6 @@ import * as ReactDOM from 'react-dom/client'
 import '!./output.css'
 
 import { Button } from './components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from './components/ui/select'
 import { Checkbox } from './components/ui/checkbox'
 import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
@@ -333,6 +327,101 @@ function targetSuggestsHeavier(name: string): boolean {
   return n.includes('prominent') || n.includes('bold') || n.includes('semibold') || n.includes('semi-bold')
 }
 
+type StyleOption = {
+  id: string
+  name: string
+  fontSize?: number | null
+  weight?: string
+  sizeStr?: string
+}
+
+type SourceStyleRow = {
+  key: string
+  font: string
+  size: number
+  lh: number | null
+  weight: string
+  decoration?: string
+  segmentCount?: number
+}
+
+function StyleOptionPickerModal({
+  open,
+  sourceLabel,
+  currentValue,
+  availableStyles,
+  onClose,
+  onSelect,
+}: {
+  open: boolean
+  sourceLabel: string
+  currentValue: string
+  availableStyles: StyleOption[]
+  onClose: () => void
+  onSelect: (value: string) => void
+}) {
+  if (!open) return null
+
+  const options = [
+    { id: '__none__', title: 'No mapping' },
+    ...availableStyles.map(style => ({
+      id: style.id,
+      title: `${style.name}${style.sizeStr ? ` • ${style.sizeStr.replace('px / ', '/')}` : ''}`,
+    })),
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 px-4" onClick={onClose}>
+      <div
+        className="flex max-h-[78vh] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Choose target style</p>
+            <p className="mt-1 truncate text-[12px] text-muted-foreground">{sourceLabel}</p>
+          </div>
+          <button
+            type="button"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={onClose}
+            aria-label="Close style picker"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none fade-scroll-y p-2">
+          <div className="space-y-1">
+            {options.map(option => {
+              const selected = currentValue === option.id || (!currentValue && option.id === '__none__')
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`flex h-10 w-full items-center gap-2 rounded-md px-3 text-left transition-colors ${
+                    selected
+                      ? 'bg-accent/12 text-foreground'
+                      : 'text-foreground hover:bg-muted/70'
+                  }`}
+                  onClick={() => {
+                    onSelect(option.id)
+                    onClose()
+                  }}
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    {selected ? <Check className="h-3.5 w-3.5 text-accent" /> : null}
+                  </span>
+                  <span className="truncate text-[13px] leading-5">{option.title}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StyleMappingModal({
   open,
   onClose,
@@ -350,32 +439,40 @@ function StyleMappingModal({
   lang: string
   langLabel: string
   fontForLang: string
-  availableStyles: Array<{ id: string; name: string; fontSize?: number | null; weight?: string; sizeStr?: string }>
-  sourceStyles: Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>
+  availableStyles: StyleOption[]
+  sourceStyles: SourceStyleRow[]
   styleMappings: Record<string, Record<string, string>>
   onMappingChange: (lang: string, key: string, value: string) => void
   onSave: () => void
 }) {
+  const [pickerSourceKey, setPickerSourceKey] = React.useState<string | null>(null)
+  const pendingActionRef = React.useRef<'scan' | 'refetch' | 'initial-load' | null>(null)
+  const scanBaselineRef = React.useRef<string[]>([])
+  const stylesBaselineRef = React.useRef<string[]>([])
+
+  const notifyInFigma = React.useCallback((message: string, error = false) => {
+    parent.postMessage({ pluginMessage: { type: 'style-mapping-notify', message, error } }, '*')
+  }, [])
+
   React.useEffect(() => {
     if (open && fontForLang) {
+      pendingActionRef.current = 'initial-load'
       parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')
     }
   }, [open, fontForLang])
 
-  if (!open) return null
+  React.useEffect(() => {
+    if (!open) {
+      setPickerSourceKey(null)
+      pendingActionRef.current = null
+      scanBaselineRef.current = []
+      stylesBaselineRef.current = []
+    }
+  }, [open])
 
   const langMap = styleMappings[lang] || {}
-  type DisplaySourceStyle = {
-    key: string
-    font: string
-    size: number
-    lh: number | null
-    weight: string
-    decoration?: string
-    segmentCount?: number
-  }
 
-  const mappedSourceStyles: DisplaySourceStyle[] = Object.keys(langMap).map((key) => {
+  const mappedSourceStyles: SourceStyleRow[] = Object.keys(langMap).map((key) => {
     const [font, sizeStr, lhStr, weight] = key.split('|')
     const parsedSize = Number(sizeStr)
     const parsedLineHeight = lhStr === 'auto' ? null : Number(lhStr)
@@ -387,7 +484,66 @@ function StyleMappingModal({
       weight: weight || 'Regular',
     }
   })
-  const displaySourceStyles: DisplaySourceStyle[] = sourceStyles.length > 0 ? sourceStyles : mappedSourceStyles
+  const displaySourceStyles: SourceStyleRow[] = sourceStyles.length > 0 ? sourceStyles : mappedSourceStyles
+  const pickerSource = displaySourceStyles.find(src => src.key === pickerSourceKey) || null
+
+  React.useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      const msg = event.data.pluginMessage
+      if (!msg || !open) return
+
+      if (msg.type === 'styles-for-font-loaded') {
+        if (typeof msg.fontFamily !== 'string' || msg.fontFamily !== fontForLang) return
+
+        const nextIds = Array.isArray(msg.styles) ? msg.styles.map((style: StyleOption) => style.id) : []
+        const previousIds = stylesBaselineRef.current
+
+        if (pendingActionRef.current === 'refetch') {
+          const newCount = nextIds.filter((id: string) => !previousIds.includes(id)).length
+          notifyInFigma(
+            nextIds.length === 0
+              ? `No styles found for ${fontForLang}.`
+              : newCount > 0
+                ? `Refetched ${nextIds.length} styles for ${fontForLang}. ${newCount} new style${newCount === 1 ? '' : 's'} found.`
+                : `Refetched ${nextIds.length} styles for ${fontForLang}. No new updates found.`
+          )
+        }
+
+        stylesBaselineRef.current = nextIds
+        pendingActionRef.current = null
+      }
+
+      if (msg.type === 'scan-selection-loaded') {
+        const nextKeys = Array.isArray(msg.sourceStyles) ? msg.sourceStyles.map((style: SourceStyleRow) => style.key) : []
+        const previousKeys = scanBaselineRef.current
+
+        if (pendingActionRef.current === 'scan') {
+          const newCount = nextKeys.filter((key: string) => !previousKeys.includes(key)).length
+          notifyInFigma(
+            nextKeys.length === 0
+              ? 'Scan finished. No text styles found in the current selection.'
+              : previousKeys.length === 0
+                ? `Scan finished. Found ${nextKeys.length} source style${nextKeys.length === 1 ? '' : 's'}.`
+                : newCount > 0
+                  ? `Scan finished. Found ${newCount} new source style${newCount === 1 ? '' : 's'}.`
+                  : 'Scan finished. No new updates found in the current selection.'
+          )
+        }
+
+        scanBaselineRef.current = nextKeys
+        pendingActionRef.current = null
+      }
+
+      if (msg.type === 'style-mapping-feedback') {
+        pendingActionRef.current = null
+      }
+    }
+
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [fontForLang, notifyInFigma, open])
+
+  if (!open) return null
 
   const handleAutoApply = () => {
     if (availableStyles.length === 0 || sourceStyles.length === 0) return
@@ -408,16 +564,28 @@ function StyleMappingModal({
 
   const canAutoApply = sourceStyles.length > 0 && availableStyles.length > 0
   const hasDisplayRows = displaySourceStyles.length > 0
-  const scanButtonLabel = sourceStyles.length > 0 ? 'Rescan selection' : 'Scan selection'
+  const scanButtonLabel = 'Scan selection'
+
+  const handleScanSelection = () => {
+    scanBaselineRef.current = displaySourceStyles.map(style => style.key)
+    pendingActionRef.current = 'scan'
+    parent.postMessage({ pluginMessage: { type: 'scan-selection' } }, '*')
+  }
+
+  const handleRefetchStyles = () => {
+    stylesBaselineRef.current = availableStyles.map(style => style.id)
+    pendingActionRef.current = 'refetch'
+    parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-[min(560px,96vw)] max-h-[88vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
+        className="flex max-h-[84vh] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <span className="text-sm font-semibold">Style mappings — {langLabel}</span>
+          <span className="text-sm font-semibold">Font style mapping - {langLabel}</span>
           <button
             type="button"
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -427,29 +595,29 @@ function StyleMappingModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-4 space-y-4 flex-1 min-h-0 overflow-y-auto scrollbar-none fade-scroll-y">
-          <button
-            type="button"
-            className="flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-background text-base font-medium text-foreground transition-colors hover:border-accent/40 hover:bg-muted/30"
-            onClick={() => parent.postMessage({ pluginMessage: { type: 'scan-selection' } }, '*')}
-            title="Find source styles in your selection"
-          >
-            <Search className="h-4 w-4" />
-            {scanButtonLabel}
-          </button>
-
+        <div className="flex min-h-0 flex-1 flex-col px-4 py-4">
           {hasDisplayRows ? (
             <>
-              <div className="flex items-center justify-end gap-4">
+              <div className="mb-3 flex items-center justify-end gap-4">
                 <Button
                   variant="link"
                   size="sm"
                   className="h-auto px-0 text-[12px] font-medium text-muted-foreground hover:text-foreground"
-                  onClick={() => parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')}
+                  onClick={handleScanSelection}
+                  title="Find source styles in your selection"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  {scanButtonLabel}
+                </Button>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+                  onClick={handleRefetchStyles}
                 >
                   Refetch styles
                 </Button>
-                {canAutoApply && (
+                {canAutoApply ? (
                   <Button
                     variant="link"
                     size="sm"
@@ -460,73 +628,55 @@ function StyleMappingModal({
                     <Sparkles className="h-3.5 w-3.5" />
                     Auto apply
                   </Button>
-                )}
+                ) : null}
               </div>
 
-              <div className="space-y-3 max-h-[420px] overflow-y-auto scrollbar-none fade-scroll-y">
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                 {displaySourceStyles.map((src) => {
-                const current = langMap[src.key] ?? ''
-                const selectedStyle = availableStyles.find(s => s.id === current)
-                return (
-                  <div key={src.key} className="grid grid-cols-[180px_minmax(0,1fr)] items-start gap-4">
-                    <span className="line-clamp-2 pt-2 text-[12px] leading-5 text-foreground" title={src.key}>
-                      {src.font} {src.size}px {src.weight}
-                      {src.decoration ? ` (${src.decoration.toLowerCase()})` : ''}
-                      {src.segmentCount && src.segmentCount > 1 ? ` (${src.segmentCount})` : ''}
-                    </span>
-                    <Select
-                      value={current || '__none__'}
-                      onValueChange={(v) => onMappingChange(lang, src.key, v === '__none__' ? '' : v === 'skip' ? 'skip' : v)}
-                    >
-                      <SelectTrigger className="min-h-[56px] w-full items-start px-3 py-2 text-left">
+                  const current = langMap[src.key] ?? ''
+                  const selectedStyle = availableStyles.find(s => s.id === current)
+                  return (
+                    <div key={src.key} className="grid grid-cols-[minmax(0,1fr)_132px] items-start gap-2">
+                      <span className="line-clamp-2 pt-1 text-[12px] leading-4.5 text-foreground" title={src.key}>
+                        {src.font} {src.size}px {src.weight}
+                        {src.decoration ? ` (${src.decoration.toLowerCase()})` : ''}
+                        {src.segmentCount && src.segmentCount > 1 ? ` (${src.segmentCount})` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-sm transition-colors hover:bg-muted/40"
+                        onClick={() => setPickerSourceKey(src.key)}
+                      >
                         {selectedStyle ? (
-                          <div className="min-w-0 pr-6 text-left">
-                            <div className="truncate text-[12px] leading-4 text-foreground">
-                              {selectedStyle.name}
-                            </div>
-                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                              {selectedStyle.sizeStr || '\u2014'}
-                            </div>
-                          </div>
-                        ) : current === 'skip' ? (
-                          <div className="min-w-0 pr-6 text-left">
-                            <div className="truncate text-[12px] leading-4 text-foreground">Skip</div>
-                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">No style applied</div>
-                          </div>
-                        ) : current ? (
-                          <div className="min-w-0 pr-6 text-left">
-                            <div className="truncate text-[12px] leading-4 text-foreground">Mapped style</div>
-                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">Refetch styles to preview details</div>
+                          <div className="min-w-0 truncate text-[12px] leading-4 text-foreground">
+                            {selectedStyle.name}{selectedStyle.sizeStr ? ` • ${selectedStyle.sizeStr.replace('px / ', '/')}` : ''}
                           </div>
                         ) : (
-                          <div className="min-w-0 pr-6 text-left">
-                            <div className="truncate text-[12px] leading-4 text-foreground">No mapping</div>
-                            <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                              Select a target style
-                            </div>
-                          </div>
+                          <div className="min-w-0 truncate text-[12px] leading-4 text-muted-foreground">No mapping</div>
                         )}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">—</SelectItem>
-                        <SelectItem value="skip">Skip</SelectItem>
-                        {availableStyles.map(s => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.name}{s.sizeStr ? ` (${s.sizeStr})` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    </div>
+                  )
                 })}
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-5 text-center">
-              <p className="text-[12px] text-muted-foreground">
-                Select a frame or text layer, then scan to load source styles.
-              </p>
+            <div className="flex flex-1 flex-col justify-center">
+              <button
+                type="button"
+                className="flex h-[64px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-background text-base font-medium text-foreground transition-colors hover:border-accent/40 hover:bg-muted/30"
+                onClick={handleScanSelection}
+                title="Find source styles in your selection"
+              >
+                <Search className="h-4 w-4" />
+                {scanButtonLabel}
+              </button>
+              <div className="mt-4 px-4 py-2 text-center">
+                <p className="text-[12px] text-muted-foreground">
+                  Select a frame or text layer, then scan to load source styles.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -537,6 +687,25 @@ function StyleMappingModal({
           </div>
         )}
       </div>
+      <StyleOptionPickerModal
+        open={pickerSource !== null}
+        sourceLabel={
+          pickerSource
+            ? `${pickerSource.font} ${pickerSource.size}px ${pickerSource.weight}${pickerSource.decoration ? ` (${pickerSource.decoration.toLowerCase()})` : ''}`
+            : ''
+        }
+        currentValue={pickerSource ? langMap[pickerSource.key] ?? '' : ''}
+        availableStyles={availableStyles}
+        onClose={() => setPickerSourceKey(null)}
+        onSelect={(value) => {
+          if (!pickerSource) return
+          onMappingChange(
+            lang,
+            pickerSource.key,
+            value === '__none__' ? '' : value
+          )
+        }}
+      />
     </div>
   )
 }
@@ -586,7 +755,6 @@ function Plugin() {
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
   const [swapStatus, setSwapStatus] = React.useState<string | null>(null)
-  const [applyFontStyles, setApplyFontStyles] = React.useState(false)
 
   const [fontPrefs, setFontPrefs] = React.useState<Record<string, string>>({})
   const [availableFonts, setAvailableFonts] = React.useState<string[]>([])
@@ -785,7 +953,7 @@ function Plugin() {
     setIsSwapping(true)
     setSwapStatus('Starting font swap...')
     parent.postMessage({ pluginMessage: {
-      type: 'font-swap', targetFont, applyFontStyles,
+      type: 'font-swap', targetFont,
     }}, '*')
   }
 
@@ -794,6 +962,12 @@ function Plugin() {
 
   const handleSaveFontPrefs = () => {
     parent.postMessage({ pluginMessage: { type: 'save-font-prefs', fontPrefs } }, '*')
+  }
+
+  const openStyleMappingModal = (lang: string) => {
+    setSourceStyles([])
+    setAvailableStyles([])
+    setStyleMappingModalLang(lang)
   }
 
   const hasStyleMappingsForLang = (lang: string): boolean =>
@@ -916,7 +1090,7 @@ function Plugin() {
                     <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
                       <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Translations are cached (24h) to reduce API costs. Duplicate text is translated once. <span className="font-medium text-foreground">&quot;hing&quot;</span> = transliteration; <span className="font-medium text-foreground">&quot;dnd&quot;</span> = preserve text & font.
+                        Translations are cached (24h) to reduce API costs. Duplicate text is translated once. <span className="font-medium text-foreground">&quot;hing&quot;</span> = transliteration; <span className="font-medium text-foreground">&quot;dnd&quot;</span> = preserve text & font; <span className="font-medium text-foreground">&quot;lma&quot;</span> = leave text completely untouched.
                       </p>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
@@ -948,11 +1122,6 @@ function Plugin() {
                       </CardContent>
                     </Card>
 
-                    <label className="flex cursor-pointer items-center gap-2.5">
-                      <Checkbox checked={applyFontStyles} onCheckedChange={(c) => setApplyFontStyles(c === true)} />
-                      <span className="text-sm text-foreground select-none">Auto-apply font styles (Non-Telugu)</span>
-                    </label>
-
                     <Button className="w-full h-9 rounded-md text-sm font-medium shadow-sm" disabled={isSwapping} onClick={handleFontSwap}>
                       {isSwapping ? <><Loader2 className="h-4 w-4 animate-spin" /> Converting…</> : `Convert selection to ${targetFont}`}
                     </Button>
@@ -962,7 +1131,7 @@ function Plugin() {
                     <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
                       <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Select text layers, choose a font, and convert. All selected text gets the new font; weights are preserved when possible.
+                        Select text layers, choose a font, and convert. All selected text gets the new font; weights are preserved when possible. <span className="font-medium text-foreground">&quot;lma&quot;</span> stays untouched.
                       </p>
                     </div>
                   </>
@@ -1020,7 +1189,7 @@ function Plugin() {
                                 ? 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/15'
                                 : 'border-input text-muted-foreground hover:bg-muted hover:text-foreground'
                             }`}
-                            onClick={() => setStyleMappingModalLang(o.value)}
+                            onClick={() => openStyleMappingModal(o.value)}
                             title={hasMappings ? `Style mappings applied for ${o.label}` : `Style mappings for ${o.label}`}
                           >
                             {hasMappings && (
@@ -1043,6 +1212,10 @@ function Plugin() {
                     className="w-full h-9 rounded-md text-sm"
                     onClick={() => {
                       setFontPrefs({})
+                      setStyleMappings({})
+                      setSourceStyles([])
+                      setAvailableStyles([])
+                      parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: {} } }, '*')
                       setHasUnsavedFontPrefs(true)
                     }}
                   >

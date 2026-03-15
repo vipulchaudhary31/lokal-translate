@@ -1,7 +1,7 @@
 import { showUI } from '@create-figma-plugin/utilities'
 
 export default function () {
-  const options = { width: 520, height: 700 }
+  const options = { width: 360, height: 520 }
   const data = { greeting: 'Lokal Translate is ready!' }
   showUI(options, data)
 }
@@ -1564,98 +1564,6 @@ function findMatchingStyleDefinition(textNode: TextNode, isTeluguStyle: boolean 
 }
 
 // Function to automatically apply text style based on properties
-async function autoApplyTextStyle(textNode: TextNode, targetFont: string): Promise<boolean> {
-  try {
-    console.log('\n=== AUTO APPLY TEXT STYLE START ===')
-    console.log('Initial text node state:', {
-      text: textNode.characters.substring(0, 50),
-      font: textNode.fontName,
-      size: textNode.fontSize,
-      lineHeight: textNode.lineHeight,
-      currentStyleId: textNode.textStyleId,
-      targetFont
-    })
-    
-    // Check if this is Telugu style
-    const isTeluguStyle = targetFont === 'Kohinoor Telugu'
-    console.log('Style type:', isTeluguStyle ? 'Telugu' : 'Standard')
-    
-    // Find matching style definition
-    console.log('\n=== Finding Style Definition ===')
-    console.log('Text node properties:', {
-      text: textNode.characters.substring(0, 50),
-      fontSize: textNode.fontSize,
-      lineHeight: textNode.lineHeight,
-      fontName: textNode.fontName,
-      style: (textNode.fontName as FontName).style,
-      isTeluguStyle
-    })
-    
-    const matchingDef = findMatchingStyleDefinition(textNode, isTeluguStyle)
-    if (!matchingDef) {
-      console.log('❌ No matching style definition found')
-      return false
-    }
-    
-    console.log('✅ Found matching style:', {
-      styleName: matchingDef.styleName,
-      size: isTeluguStyle ? matchingDef.teluguSize : matchingDef.size,
-      lineHeight: isTeluguStyle ? matchingDef.teluguLineHeight : matchingDef.lineHeight,
-      weight: matchingDef.weight
-    })
-    
-    // Get existing style
-    console.log('\n=== Getting/Creating Text Style ===')
-    const style = await getOrCreateTextStyle(targetFont, matchingDef)
-    if (!style) {
-      console.log('❌ Failed to get/create text style')
-      return false
-    }
-    
-    console.log('✅ Got text style:', {
-      name: style.name,
-      fontSize: style.fontSize,
-      lineHeight: style.lineHeight,
-      fontName: style.fontName
-    })
-    
-    // Load font and apply style
-    console.log('\n=== Applying Style ===')
-    console.log('Loading font:', style.fontName)
-    await figma.loadFontAsync(style.fontName)
-    
-    // For Telugu, we need to set the size and line height explicitly
-    if (isTeluguStyle && matchingDef.teluguSize && matchingDef.teluguLineHeight) {
-      console.log('Applying Telugu-specific size and line height:', {
-        size: matchingDef.teluguSize,
-        lineHeight: matchingDef.teluguLineHeight
-      })
-      textNode.fontSize = matchingDef.teluguSize
-      textNode.lineHeight = { value: matchingDef.teluguLineHeight, unit: 'PIXELS' }
-    }
-    
-    console.log('Applying text style ID:', style.id)
-    await textNode.setTextStyleIdAsync(style.id)
-    
-    const styleName = typeof style.name === 'symbol' ? String(style.name) : style.name
-    console.log(`✅ Successfully applied text style: ${styleName}`)
-    
-    console.log('Final text node state:', {
-      text: textNode.characters.substring(0, 50),
-      font: textNode.fontName,
-      size: textNode.fontSize,
-      lineHeight: textNode.lineHeight,
-      styleId: textNode.textStyleId
-    })
-    
-    return true
-    
-  } catch (error) {
-    console.error('❌ Error auto-applying text style:', error)
-    return false
-  }
-}
-
 // Function to apply Telugu font and style with proper sequencing
 async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 'skipped' | 'error'> {
   try {
@@ -1739,8 +1647,8 @@ async function applyTeluguFontAndStyle(textNode: TextNode): Promise<'success' | 
   }
 }
 
-// Function to swap font family while preserving style (converts current font to target)
-async function swapFontFamily(textNode: TextNode, targetFont: string, applyFontStyles: boolean = false): Promise<'success' | 'skipped' | 'error'> {
+// Function to swap font family while preserving weight where possible
+async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'success' | 'skipped' | 'error'> {
   const currentFont = textNode.fontName as FontName
 
   try {
@@ -1749,21 +1657,9 @@ async function swapFontFamily(textNode: TextNode, targetFont: string, applyFontS
       text: textNode.characters.substring(0, 50),
       currentFont: currentFont,
       targetFont,
-      applyFontStyles,
       currentStyleId: textNode.textStyleId
     })
-    
-    // First try to apply text style if enabled
-    if (applyFontStyles) {
-      console.log('Attempting to apply font styles...')
-      const styleApplied = await autoApplyTextStyle(textNode, targetFont)
-      if (styleApplied) {
-        console.log('✅ Successfully applied text style')
-        return 'success'
-      }
-      console.log('⚠️ Text style application failed, falling back to weight mapping')
-    }
-    
+
     // Use same weight matching as translation: try exact match, then variants, then proximity fallbacks
     const originalWeight = currentFont.style || 'Regular'
     const styleNames = getWeightStyleNamesToTry(originalWeight)
@@ -1798,7 +1694,6 @@ figma.ui.onmessage = async (msg) => {
   console.log('Message type:', msg.type)
   console.log('Message data:', {
     targetLanguage: msg.targetLanguage,
-    applyFontStyles: msg.applyFontStyles,
     type: msg.type
   })
   
@@ -2299,15 +2194,25 @@ figma.ui.onmessage = async (msg) => {
       })
       figma.ui.postMessage({ type: 'styles-for-font-loaded', fontFamily, styles })
     } catch (e) {
+      figma.notify('Could not load target styles right now.', { error: true })
       figma.ui.postMessage({ type: 'styles-for-font-loaded', fontFamily: '', styles: [] })
+      figma.ui.postMessage({
+        type: 'style-mapping-feedback',
+        kind: 'error',
+        message: 'Could not load target styles right now.'
+      })
     }
     return
   } else if (msg.type === 'scan-selection') {
     try {
       const selection = figma.currentPage.selection
       if (selection.length === 0) {
-        figma.ui.postMessage({ type: 'error', message: 'Please select a frame or text layer to scan styles' })
-        figma.notify('Please select a frame or text layer to scan styles', { error: true })
+        figma.notify('Please select a frame or text layer to scan styles.', { error: true })
+        figma.ui.postMessage({
+          type: 'style-mapping-feedback',
+          kind: 'error',
+          message: 'Please select a frame or text layer to scan styles.'
+        })
         return
       }
       const containers = selection.filter((n: SceneNode) => 'children' in n)
@@ -2347,7 +2252,18 @@ figma.ui.onmessage = async (msg) => {
       }))
       figma.ui.postMessage({ type: 'scan-selection-loaded', sourceStyles })
     } catch (e) {
-      figma.ui.postMessage({ type: 'scan-selection-loaded', sourceStyles: [] })
+      figma.notify('Could not scan the current selection.', { error: true })
+      figma.ui.postMessage({
+        type: 'style-mapping-feedback',
+        kind: 'error',
+        message: 'Could not scan the current selection.'
+      })
+    }
+    return
+  } else if (msg.type === 'style-mapping-notify') {
+    const message = typeof msg.message === 'string' ? msg.message : ''
+    if (message) {
+      figma.notify(message, msg.error ? { error: true } : undefined)
     }
     return
   } else if (msg.type === 'get-style-mappings') {
@@ -2540,7 +2456,7 @@ figma.ui.onmessage = async (msg) => {
             message: `Swapping font ${i + 1} of ${relevantNodes.length}...`
           })
           
-          const result = await swapFontFamily(textNode, msg.targetFont, msg.applyFontStyles)
+          const result = await swapFontFamily(textNode, msg.targetFont)
           
           if (result === 'success') {
             swappedCount++

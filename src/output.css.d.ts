@@ -133,6 +133,7 @@ declare const styles: {
   readonly "auto-rows-min": string;
   readonly "basis-full": string;
   readonly "bg-(--color-bg)": string;
+  readonly "bg-[#FCFBF8]": string;
   readonly "bg-[#bf4e30]": string;
   readonly "bg-[#e8e8e8]": string;
   readonly "bg-[#f5f5f5]": string;
@@ -143,8 +144,11 @@ declare const styles: {
   readonly "bg-[rgba(97,96,97,0.2)]": string;
   readonly "bg-accent": string;
   readonly "bg-accent/10": string;
+  readonly "bg-accent/12": string;
+  readonly "bg-accent/15": string;
   readonly "bg-background": string;
   readonly "bg-black/50": string;
+  readonly "bg-black/55": string;
   readonly "bg-border": string;
   readonly "bg-card": string;
   readonly "bg-center": string;
@@ -160,6 +164,7 @@ declare const styles: {
   readonly "bg-muted/20": string;
   readonly "bg-muted/50": string;
   readonly "bg-muted/60": string;
+  readonly "bg-muted/70": string;
   readonly "bg-muted/80": string;
   readonly "bg-no-repeat": string;
   readonly "bg-popover": string;
@@ -371,6 +376,7 @@ declare const styles: {
   readonly "duration-300": string;
   readonly "ease-in-out": string;
   readonly "ease-linear": string;
+  readonly "ease-out": string;
   readonly "end": string;
   readonly "fade-scroll-x": string;
   readonly "fade-scroll-y": string;
@@ -471,6 +477,9 @@ declare const styles: {
   readonly "grid-cols-3": string;
   readonly "grid-cols-[0_1fr]": string;
   readonly "grid-cols-[180px_minmax(0,1fr)]": string;
+  readonly "grid-cols-[1fr_minmax(0,1.45fr)]": string;
+  readonly "grid-cols-[minmax(0,1fr)_132px]": string;
+  readonly "grid-cols-[minmax(0,1fr)_146px]": string;
   readonly "grid-rows-[auto_auto]": string;
   readonly "group": string;
   readonly "group-data-[collapsible=icon]:-mt-8": string;
@@ -810,6 +819,8 @@ declare const styles: {
   readonly "h-[6.915px]": string;
   readonly "h-[6.948px]": string;
   readonly "h-[6.999px]": string;
+  readonly "h-[64px]": string;
+  readonly "h-[68px]": string;
   readonly "h-[7.009px]": string;
   readonly "h-[7.122px]": string;
   readonly "h-[7.1px]": string;
@@ -865,6 +876,7 @@ declare const styles: {
   readonly "has-data-[variant=inset]:bg-sidebar": string;
   readonly "has-disabled:opacity-50": string;
   readonly "hidden": string;
+  readonly "hover:-translate-y-[1px]": string;
   readonly "hover:after:bg-sidebar-border": string;
   readonly "hover:bg-[#ebebeb]": string;
   readonly "hover:bg-accent": string;
@@ -880,6 +892,7 @@ declare const styles: {
   readonly "hover:bg-secondary/60": string;
   readonly "hover:bg-secondary/80": string;
   readonly "hover:bg-sidebar-accent": string;
+  readonly "hover:bg-white": string;
   readonly "hover:border-accent/40": string;
   readonly "hover:border-border/80": string;
   readonly "hover:border-foreground": string;
@@ -888,6 +901,8 @@ declare const styles: {
   readonly "hover:opacity-90": string;
   readonly "hover:ring-4": string;
   readonly "hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]": string;
+  readonly "hover:shadow-[0_16px_30px_rgba(17,24,39,0.08),0_4px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "hover:shadow-[inset_0_0_0_1px_rgba(23,23,23,0.06),0_12px_22px_rgba(17,24,39,0.06)]": string;
   readonly "hover:text-accent-foreground": string;
   readonly "hover:text-accent/80": string;
   readonly "hover:text-foreground": string;
@@ -1405,6 +1420,7 @@ declare const styles: {
   readonly "last:border-b-0": string;
   readonly "last:rounded-r-md": string;
   readonly "leading-4": string;
+  readonly "leading-4.5": string;
   readonly "leading-5": string;
   readonly "leading-[0]": string;
   readonly "leading-[16px]": string;
@@ -1898,6 +1914,7 @@ declare const styles: {
   readonly "max-h-96": string;
   readonly "max-h-[280px]": string;
   readonly "max-h-[300px]": string;
+  readonly "max-h-[340px]": string;
   readonly "max-h-[360px]": string;
   readonly "max-h-[420px]": string;
   readonly "max-h-[60px]": string;
@@ -1905,8 +1922,11 @@ declare const styles: {
   readonly "max-h-[64px]": string;
   readonly "max-h-[66px]": string;
   readonly "max-h-[72px]": string;
+  readonly "max-h-[78vh]": string;
   readonly "max-h-[80px]": string;
+  readonly "max-h-[84vh]": string;
   readonly "max-h-[85vh]": string;
+  readonly "max-h-[86vh]": string;
   readonly "max-h-[88vh]": string;
   readonly "max-w-(--skeleton-width)": string;
   readonly "max-w-[62px]": string;
@@ -1930,10 +1950,15 @@ declare const styles: {
   readonly "md:text-sm": string;
   readonly "md:w-[var(--radix-navigation-menu-viewport-width)]": string;
   readonly "md:w-auto": string;
+  readonly "min-[430px]:gap-4": string;
+  readonly "min-[430px]:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)]": string;
+  readonly "min-[430px]:items-start": string;
+  readonly "min-[430px]:pt-2": string;
   readonly "min-h-0": string;
   readonly "min-h-16": string;
   readonly "min-h-4": string;
   readonly "min-h-[56px]": string;
+  readonly "min-h-[64px]": string;
   readonly "min-h-full": string;
   readonly "min-h-px": string;
   readonly "min-h-svh": string;
@@ -2033,6 +2058,7 @@ declare const styles: {
   readonly "pr-6": string;
   readonly "pr-8": string;
   readonly "pt-0": string;
+  readonly "pt-0.5": string;
   readonly "pt-1": string;
   readonly "pt-2": string;
   readonly "pt-3": string;
@@ -2562,6 +2588,9 @@ declare const styles: {
   readonly "rotate-45": string;
   readonly "rotate-90": string;
   readonly "rounded": string;
+  readonly "rounded-[10px]": string;
+  readonly "rounded-[14px]": string;
+  readonly "rounded-[18px]": string;
   readonly "rounded-[2px]": string;
   readonly "rounded-[4px]": string;
   readonly "rounded-[8.75px]": string;
@@ -2592,7 +2621,12 @@ declare const styles: {
   readonly "self-start": string;
   readonly "shadow": string;
   readonly "shadow-[0_0_0_1px_hsl(var(--sidebar-border))]": string;
+  readonly "shadow-[0_12px_26px_rgba(17,24,39,0.06),0_2px_8px_rgba(17,24,39,0.04)]": string;
+  readonly "shadow-[0_14px_34px_rgba(17,24,39,0.08),0_3px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "shadow-[0_18px_34px_rgba(17,24,39,0.12),0_4px_12px_rgba(17,24,39,0.06)]": string;
+  readonly "shadow-[0_24px_80px_rgba(0,0,0,0.28)]": string;
   readonly "shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]": string;
+  readonly "shadow-[inset_0_0_0_1px_rgba(23,23,23,0.08),0_8px_18px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-card": string;
   readonly "shadow-input": string;
   readonly "shadow-lg": string;
@@ -3044,15 +3078,18 @@ declare const styles: {
   readonly "tracking-[-0.04em]": string;
   readonly "tracking-[0.01em]": string;
   readonly "tracking-[0.05em]": string;
+  readonly "tracking-[0.14em]": string;
   readonly "tracking-normal": string;
   readonly "tracking-tight": string;
   readonly "tracking-widest": string;
   readonly "transform": string;
   readonly "transition": string;
+  readonly "transition-[background-color,box-shadow,transform]": string;
   readonly "transition-[color,box-shadow]": string;
   readonly "transition-[left,right,width]": string;
   readonly "transition-[margin,opacity]": string;
   readonly "transition-[transform,box-shadow,border-color]": string;
+  readonly "transition-[transform,box-shadow]": string;
   readonly "transition-[width,height,padding]": string;
   readonly "transition-[width]": string;
   readonly "transition-all": string;
@@ -3112,9 +3149,12 @@ declare const styles: {
   readonly "w-[64px]": string;
   readonly "w-[82px]": string;
   readonly "w-[90px]": string;
+  readonly "w-[min(336px,calc(100vw-24px))]": string;
   readonly "w-[min(340px,95vw)]": string;
   readonly "w-[min(360px,95vw)]": string;
   readonly "w-[min(400px,92vw)]": string;
+  readonly "w-[min(440px,92vw)]": string;
+  readonly "w-[min(520px,calc(100vw-24px))]": string;
   readonly "w-[min(560px,96vw)]": string;
   readonly "w-auto": string;
   readonly "w-fit": string;
@@ -3126,6 +3166,7 @@ declare const styles: {
   readonly "z-20": string;
   readonly "z-50": string;
   readonly "z-[1]": string;
+  readonly "z-[70]": string;
 };
 export = styles;
 
