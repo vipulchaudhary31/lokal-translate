@@ -52,7 +52,7 @@
     "editorType": [
       "figma"
     ],
-    "id": "1615808003342590010",
+    "id": "1615817261407547486",
     "name": "Lokal Translate",
     "main": "src/main.ts",
     "ui": "src/ui.tsx",
