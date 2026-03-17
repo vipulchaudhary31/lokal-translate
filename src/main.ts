@@ -225,6 +225,7 @@ async function getLibraryTextStyleById(styleId: string): Promise<TextStyle | nul
 // Font prefs cache (loaded at start of translate, updated on save)
 let fontPrefsCache: Record<string, string> | null = null
 const FONT_PREFS_KEY = 'ai-translate-font-prefs'
+const USAGE_HINT_SEEN_KEY = 'ai-translate-usage-hint-seen'
 
 async function loadFontPrefs(): Promise<Record<string, string>> {
   try {
@@ -2406,6 +2407,22 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'font-prefs-loaded', fontPrefs: {} })
     }
     return
+  } else if (msg.type === 'get-usage-hint-state') {
+    try {
+      const seen = await figma.clientStorage.getAsync(USAGE_HINT_SEEN_KEY)
+      figma.ui.postMessage({ type: 'usage-hint-state-loaded', seen: Boolean(seen) })
+    } catch {
+      figma.ui.postMessage({ type: 'usage-hint-state-loaded', seen: false })
+    }
+    return
+  } else if (msg.type === 'dismiss-usage-hint') {
+    try {
+      await figma.clientStorage.setAsync(USAGE_HINT_SEEN_KEY, true)
+      figma.ui.postMessage({ type: 'usage-hint-state-loaded', seen: true })
+    } catch {
+      figma.ui.postMessage({ type: 'usage-hint-state-loaded', seen: true })
+    }
+    return
   } else if (msg.type === 'save-font-prefs') {
     try {
       const prefs = msg.fontPrefs && typeof msg.fontPrefs === 'object' ? (msg.fontPrefs as Record<string, string>) : {}
@@ -2438,6 +2455,7 @@ figma.ui.onmessage = async (msg) => {
       await figma.clientStorage.deleteAsync('ai-translate-bulk-languages')
       await figma.clientStorage.deleteAsync(FONT_PREFS_KEY)
       await figma.clientStorage.deleteAsync(STYLE_MAPPINGS_KEY)
+      await figma.clientStorage.deleteAsync(USAGE_HINT_SEEN_KEY)
       fontPrefsCache = {}
       styleMappingsCache = null
       const keys = await figma.clientStorage.keysAsync()

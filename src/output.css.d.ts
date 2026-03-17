@@ -170,6 +170,7 @@ declare const styles: {
   readonly "bg-accent/12": string;
   readonly "bg-accent/15": string;
   readonly "bg-background": string;
+  readonly "bg-black/45": string;
   readonly "bg-black/50": string;
   readonly "bg-black/55": string;
   readonly "bg-border": string;
@@ -185,6 +186,7 @@ declare const styles: {
   readonly "bg-gray-100": string;
   readonly "bg-muted": string;
   readonly "bg-muted/20": string;
+  readonly "bg-muted/40": string;
   readonly "bg-muted/50": string;
   readonly "bg-muted/60": string;
   readonly "bg-muted/70": string;
@@ -496,6 +498,7 @@ declare const styles: {
   readonly "gap-4": string;
   readonly "gap-5": string;
   readonly "gap-6": string;
+  readonly "gap-[18px]": string;
   readonly "gap-[20px]": string;
   readonly "gap-[2px]": string;
   readonly "gap-[4px]": string;
@@ -2695,6 +2698,7 @@ declare const styles: {
   readonly "shadow-[0_18px_34px_rgba(17,24,39,0.12),0_4px_12px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_20px_42px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.025)]": string;
   readonly "shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
+  readonly "shadow-[0_20px_44px_rgba(17,24,39,0.12),0_6px_18px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_22px_46px_rgba(17,24,39,0.05),0_8px_20px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_24px_80px_rgba(0,0,0,0.28)]": string;
   readonly "shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]": string;
@@ -2748,6 +2752,7 @@ declare const styles: {
   readonly "space-y-3": string;
   readonly "space-y-4": string;
   readonly "space-y-[10px]": string;
+  readonly "space-y-[8px]": string;
   readonly "space-y-px": string;
   readonly "spin": string;
   readonly "sr-only": string;
@@ -3235,6 +3240,7 @@ declare const styles: {
   readonly "w-[269px]": string;
   readonly "w-[2px]": string;
   readonly "w-[300px]": string;
+  readonly "w-[320px]": string;
   readonly "w-[32px]": string;
   readonly "w-[360px]": string;
   readonly "w-[50px]": string;

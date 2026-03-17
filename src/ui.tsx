@@ -747,7 +747,7 @@ function BrandingStrip() {
           className="flex h-[29px] w-[84px] flex-col items-center justify-between justify-self-center"
         >
           <p className="text-center text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
-            Translations using
+            Translations by
           </p>
           <img
             src={brandingTwo}
@@ -755,6 +755,46 @@ function BrandingStrip() {
             className="block h-[16px] w-auto max-w-none"
           />
         </a>
+      </div>
+    </div>
+  )
+}
+
+function UsageHintModal({
+  open,
+  onClose,
+  onContinue,
+}: {
+  open: boolean
+  onClose: () => void
+  onContinue: () => void
+}) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div
+        className="w-[320px] rounded-xl border border-border bg-card px-4 py-4 shadow-[0_20px_44px_rgba(17,24,39,0.12),0_6px_18px_rgba(17,24,39,0.06)]"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="space-y-4">
+          <p className="text-center text-sm leading-relaxed text-muted-foreground">
+            Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and change to the target font style, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it alone.
+          </p>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              onClick={onClose}
+            >
+              Close
+            </button>
+            <Button className="h-9 flex-1 rounded-md text-sm font-medium" onClick={onContinue}>
+              Got it
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -784,6 +824,9 @@ function Plugin() {
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
   const [sourceStyles, setSourceStyles] = React.useState<Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>>([])
   const [styleMappings, setStyleMappings] = React.useState<Record<string, Record<string, string>>>({})
+  const [hasSeenUsageHint, setHasSeenUsageHint] = React.useState(false)
+  const [showUsageHintModal, setShowUsageHintModal] = React.useState(false)
+  const [pendingUsageAction, setPendingUsageAction] = React.useState<'translate' | 'bulk' | null>(null)
   const cardRailWrapperRef = React.useRef<HTMLDivElement | null>(null)
   const cardRailViewportRef = React.useRef<HTMLDivElement | null>(null)
   const cardRefs = React.useRef<Record<string, HTMLButtonElement | null>>({})
@@ -887,6 +930,7 @@ function Plugin() {
     parent.postMessage({ pluginMessage: { type: 'get-bulk-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-font-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-style-mappings' } }, '*')
+    parent.postMessage({ pluginMessage: { type: 'get-usage-hint-state' } }, '*')
   }, [])
 
   React.useEffect(() => {
@@ -968,6 +1012,9 @@ function Plugin() {
         case 'style-mappings-saved':
           setStyleMappings(msg.mappings && typeof msg.mappings === 'object' ? msg.mappings : {})
           break
+        case 'usage-hint-state-loaded':
+          setHasSeenUsageHint(Boolean(msg.seen))
+          break
         case 'hard-reset-complete':
           setBulkLanguages(DEFAULT_BULK_LANGUAGES)
           setBulkSetupSelection(DEFAULT_BULK_LANGUAGES)
@@ -976,6 +1023,9 @@ function Plugin() {
           setStyleMappings({})
           setSourceStyles([])
           setAssumeEnglishSource(false)
+          setHasSeenUsageHint(false)
+          setShowUsageHintModal(false)
+          setPendingUsageAction(null)
           break
       }
     }
@@ -983,7 +1033,7 @@ function Plugin() {
     return () => window.removeEventListener('message', handler)
   }, [])
 
-  const handleTranslate = () => {
+  const runTranslate = () => {
     if (isBulkRunning) {
       notifyInFigma('Please wait for bulk translate to finish before starting translate.', true)
       return
@@ -1001,7 +1051,16 @@ function Plugin() {
     }}, '*')
   }
 
-  const handleBulkStressTest = () => {
+  const handleTranslate = () => {
+    if (!hasSeenUsageHint) {
+      setPendingUsageAction('translate')
+      setShowUsageHintModal(true)
+      return
+    }
+    runTranslate()
+  }
+
+  const runBulkStressTest = () => {
     if (isTranslateRunning) {
       notifyInFigma('Please wait for translate to finish before starting bulk translate.', true)
       return
@@ -1020,6 +1079,27 @@ function Plugin() {
     parent.postMessage({ pluginMessage: {
       type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages, assumeEnglish: assumeEnglishSource,
     }}, '*')
+  }
+
+  const handleBulkStressTest = () => {
+    if (!hasSeenUsageHint) {
+      setPendingUsageAction('bulk')
+      setShowUsageHintModal(true)
+      return
+    }
+    runBulkStressTest()
+  }
+
+  const handleUsageHintContinue = () => {
+    parent.postMessage({ pluginMessage: { type: 'dismiss-usage-hint' } }, '*')
+    setHasSeenUsageHint(true)
+    setShowUsageHintModal(false)
+    setPendingUsageAction(null)
+  }
+
+  const handleUsageHintClose = () => {
+    setShowUsageHintModal(false)
+    setPendingUsageAction(null)
   }
 
   const handleBulkSetupSave = () => {
@@ -1077,8 +1157,8 @@ function Plugin() {
         <div className={`px-5 py-4 ${isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
           <div className={isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-4'}>
             {page === 'translate' || page === 'fontSwap' ? (
-              <div className="space-y-[10px] pt-1">
-                <div className="flex items-end gap-5">
+              <div className="space-y-[8px] pt-1">
+                <div className="flex items-end gap-[18px]">
                   <button
                     type="button"
                     onClick={() => setPage('translate')}
@@ -1169,13 +1249,6 @@ function Plugin() {
                           <Languages className="h-4 w-4" />
                         </button>
                       </div>
-                    </div>
-
-                    <div className="flex gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                      <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and preserve original styles, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it alone.
-                      </p>
                     </div>
 
                     {showWeightMappings && weightMappingInfo.length > 0 && (
@@ -1389,7 +1462,7 @@ function Plugin() {
         </div>
       </div>
       {page === 'translate' ? (
-        <div className="flex items-center gap-4 bg-background px-5 pb-2 pt-2">
+        <div className="flex items-center gap-4 bg-background px-5 pb-3 pt-2">
           <button
             type="button"
             className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
@@ -1405,6 +1478,16 @@ function Plugin() {
             onClick={() => setAssumeEnglishSource(prev => !prev)}
           >
             Assume English: {assumeEnglishSource ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+            onClick={() => {
+              setPendingUsageAction(null)
+              setShowUsageHintModal(true)
+            }}
+          >
+            Help
           </button>
         </div>
       ) : null}
@@ -1429,6 +1512,11 @@ function Plugin() {
           setFontSwapPicker(null)
         }}
         loading={fontsLoading}
+      />
+      <UsageHintModal
+        open={showUsageHintModal}
+        onClose={handleUsageHintClose}
+        onContinue={handleUsageHintContinue}
       />
     </div>
   )
