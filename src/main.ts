@@ -11,7 +11,7 @@ const debugLog: (...args: unknown[]) => void = DEBUG_LOGS ? console.log.bind(con
 const debugWarn: (...args: unknown[]) => void = DEBUG_LOGS ? console.warn.bind(console) : () => {}
 
 // Sarvam AI API configuration
-const SARVAM_API_KEY = 'sk_a9leh764_1SnbiQW1DSqavj2miglnZngz'
+const SARVAM_API_KEY_STORAGE_KEY = 'ai-translate-sarvam-api-key'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
@@ -142,6 +142,7 @@ const failedFontCache = new Set<string>()
 let availableFontFamiliesCache: string[] | null = null
 let availableFontFamiliesPromise: Promise<string[]> | null = null
 const libraryTextStyleCache = new Map<string, Promise<TextStyle | null>>()
+let sarvamApiKeyCache: string | null | undefined = undefined
 
 function fontCacheKey(font: FontName): string {
   return `${font.family}__${font.style}`
@@ -220,6 +221,30 @@ async function getLibraryTextStyleById(styleId: string): Promise<TextStyle | nul
 
   libraryTextStyleCache.set(styleId, pending)
   return pending
+}
+
+async function loadSarvamApiKey(): Promise<string> {
+  if (sarvamApiKeyCache !== undefined) return sarvamApiKeyCache ?? ''
+  try {
+    const saved = await figma.clientStorage.getAsync(SARVAM_API_KEY_STORAGE_KEY)
+    sarvamApiKeyCache = typeof saved === 'string' ? saved.trim() : ''
+  } catch {
+    sarvamApiKeyCache = ''
+  }
+  return sarvamApiKeyCache
+}
+
+async function saveSarvamApiKey(apiKey: string): Promise<string> {
+  const normalized = apiKey.trim()
+  await figma.clientStorage.setAsync(SARVAM_API_KEY_STORAGE_KEY, normalized)
+  sarvamApiKeyCache = normalized
+  return normalized
+}
+
+async function requireSarvamApiKey(): Promise<string> {
+  const apiKey = await loadSarvamApiKey()
+  if (!apiKey) throw new Error('Please add your Sarvam API key to use this plugin.')
+  return apiKey
 }
 
 // Font prefs cache (loaded at start of translate, updated on save)
@@ -874,6 +899,7 @@ function isInIndicScript(text: string): boolean {
 // Function to detect language using Sarvam AI Language Detection API
 async function detectLanguage(text: string, session?: SessionCache): Promise<string> {
   try {
+    const apiKey = await requireSarvamApiKey()
     const cleanText = text.trim()
     if (!cleanText || cleanText.length === 0) return 'en'
     const norm = normalizeTextForCache(cleanText.substring(0, 500))
@@ -896,7 +922,7 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     const response = await fetchWithTimeout(SARVAM_LANGUAGE_DETECT_URL, {
       method: 'POST',
       headers: {
-        'api-subscription-key': SARVAM_API_KEY,
+        'api-subscription-key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1068,6 +1094,7 @@ function getApiErrorMessage(error: unknown, apiName: string): string {
 // Function to call Sarvam AI transliteration API
 async function transliterateText(text: string, sourceLanguage: string, targetLanguage: string, session?: SessionCache): Promise<string> {
   try {
+    const apiKey = await requireSarvamApiKey()
     const cleanText = text.trim()
     if (!cleanText || cleanText.length === 0) return text
     const truncatedText = cleanText.length > 1000 ? cleanText.substring(0, 1000) : cleanText
@@ -1113,7 +1140,7 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
     const response = await fetchWithTimeout(SARVAM_TRANSLITERATE_URL, {
       method: 'POST',
       headers: {
-        'api-subscription-key': SARVAM_API_KEY,
+        'api-subscription-key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1150,6 +1177,7 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
 // Function to call Sarvam AI translation API
 async function translateText(text: string, targetLanguage: string, sourceLanguage?: string, session?: SessionCache): Promise<string> {
   try {
+    const apiKey = await requireSarvamApiKey()
     const cleanText = text.trim()
     if (!cleanText || cleanText.length === 0) return text
     const truncatedText = cleanText.length > 2000 ? cleanText.substring(0, 2000) : cleanText
@@ -1206,7 +1234,7 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     const response = await fetchWithTimeout(SARVAM_API_URL, {
       method: 'POST',
       headers: {
-        'api-subscription-key': SARVAM_API_KEY,
+        'api-subscription-key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
@@ -1756,6 +1784,7 @@ figma.ui.onmessage = async (msg) => {
   
   if (msg.type === 'translate') {
     try {
+      await requireSarvamApiKey()
       await loadFontPrefs()
       await reloadStyleMappings()
       const selection = figma.currentPage.selection
@@ -2047,6 +2076,7 @@ figma.ui.onmessage = async (msg) => {
     }
   } else if (msg.type === 'bulk-translate-all') {
     try {
+      await requireSarvamApiKey()
       await loadFontPrefs()
       const validLangs = ['hi', 'ta', 'te', 'kn', 'ml', 'mr', 'bn', 'pa', 'gu']
       const bulkLangs = Array.isArray(msg.bulkLanguages) && msg.bulkLanguages.length > 0
@@ -2376,6 +2406,37 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'bulk-prefs-loaded', bulkLanguages: langs })
     } catch {
       figma.ui.postMessage({ type: 'bulk-prefs-loaded', bulkLanguages: null })
+    }
+    return
+  } else if (msg.type === 'get-api-key') {
+    try {
+      const apiKey = await loadSarvamApiKey()
+      figma.ui.postMessage({ type: 'api-key-loaded', apiKey })
+    } catch {
+      figma.ui.postMessage({ type: 'api-key-loaded', apiKey: '' })
+    }
+    return
+  } else if (msg.type === 'save-api-key') {
+    try {
+      const apiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+      const savedKey = await saveSarvamApiKey(apiKey)
+      figma.ui.postMessage({ type: 'api-key-saved', apiKey: savedKey })
+      figma.notify('API key saved')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save API key'
+      figma.ui.postMessage({ type: 'error', message })
+      figma.notify(message, { error: true })
+    }
+    return
+  } else if (msg.type === 'clear-api-key-test') {
+    try {
+      await figma.clientStorage.deleteAsync(SARVAM_API_KEY_STORAGE_KEY)
+      sarvamApiKeyCache = ''
+      figma.ui.postMessage({ type: 'api-key-cleared' })
+      figma.notify('API key cleared for testing')
+    } catch {
+      figma.ui.postMessage({ type: 'error', message: 'Failed to clear API key' })
+      figma.notify('Failed to clear API key', { error: true })
     }
     return
   } else if (msg.type === 'save-bulk-prefs') {

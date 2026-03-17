@@ -454,6 +454,7 @@ declare const styles: {
   readonly "focus-within:z-20": string;
   readonly "focus:bg-accent": string;
   readonly "focus:bg-primary": string;
+  readonly "focus:border-foreground/20": string;
   readonly "focus:outline-hidden": string;
   readonly "focus:outline-none": string;
   readonly "focus:ring-1": string;
@@ -2769,6 +2770,7 @@ declare const styles: {
   readonly "text-[#1f9d55]": string;
   readonly "text-[#292929]": string;
   readonly "text-[#C7CDD8]": string;
+  readonly "text-[#b42318]": string;
   readonly "text-[#cc9a54]": string;
   readonly "text-[0.8rem]": string;
   readonly "text-[10px]": string;

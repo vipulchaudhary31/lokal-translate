@@ -52,17 +52,20 @@
     "editorType": [
       "figma"
     ],
-    "id": "ai-translate-pro-v2",
+    "id": "1615808003342590010",
     "name": "Lokal Translate",
     "main": "src/main.ts",
     "ui": "src/ui.tsx",
+    "documentAccess": "dynamic-page",
     "networkAccess": {
       "allowedDomains": [
-        "https://api.sarvam.ai",
-        "https://fonts.googleapis.com",
+        "https://api.sarvam.ai/translate",
+        "https://api.sarvam.ai/text-lid",
+        "https://api.sarvam.ai/transliterate",
+        "https://fonts.googleapis.com/css2",
         "https://fonts.gstatic.com"
       ],
-      "reasoning": "Plugin needs API access for translation and Google Fonts for the UI typeface."
+      "reasoning": "Plugin needs Sarvam API access for translation and Google Fonts for the UI typeface."
     }
   }
 }

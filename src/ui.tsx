@@ -818,7 +818,12 @@ function Plugin() {
   const [fontsLoading, setFontsLoading] = React.useState(false)
   const [fontPickerForLang, setFontPickerForLang] = React.useState<string | null>(null)
   const [fontSwapPicker, setFontSwapPicker] = React.useState<'target' | null>(null)
-  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs'>('translate')
+  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs' | 'apiKey'>('translate')
+  const [apiKey, setApiKey] = React.useState('')
+  const [apiKeyDraft, setApiKeyDraft] = React.useState('')
+  const [apiKeyLoaded, setApiKeyLoaded] = React.useState(false)
+  const [isSavingApiKey, setIsSavingApiKey] = React.useState(false)
+  const [showApiKeyValue, setShowApiKeyValue] = React.useState(false)
   const [hasUnsavedFontPrefs, setHasUnsavedFontPrefs] = React.useState(false)
   const [styleMappingModalLang, setStyleMappingModalLang] = React.useState<string | null>(null)
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
@@ -827,6 +832,8 @@ function Plugin() {
   const [hasSeenUsageHint, setHasSeenUsageHint] = React.useState(false)
   const [showUsageHintModal, setShowUsageHintModal] = React.useState(false)
   const [pendingUsageAction, setPendingUsageAction] = React.useState<'translate' | 'bulk' | null>(null)
+  const pendingUsageActionRef = React.useRef<'translate' | 'bulk' | null>(null)
+  const hasSeenUsageHintRef = React.useRef(false)
   const cardRailWrapperRef = React.useRef<HTMLDivElement | null>(null)
   const cardRailViewportRef = React.useRef<HTMLDivElement | null>(null)
   const cardRefs = React.useRef<Record<string, HTMLButtonElement | null>>({})
@@ -927,6 +934,7 @@ function Plugin() {
   }
 
   React.useEffect(() => {
+    parent.postMessage({ pluginMessage: { type: 'get-api-key' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-bulk-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-font-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-style-mappings' } }, '*')
@@ -934,10 +942,48 @@ function Plugin() {
   }, [])
 
   React.useEffect(() => {
+    pendingUsageActionRef.current = pendingUsageAction
+  }, [pendingUsageAction])
+
+  React.useEffect(() => {
+    hasSeenUsageHintRef.current = hasSeenUsageHint
+  }, [hasSeenUsageHint])
+
+  React.useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data.pluginMessage
       if (!msg) return
       switch (msg.type) {
+        case 'api-key-loaded': {
+          const loadedApiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+          setApiKey(loadedApiKey)
+          setApiKeyDraft(loadedApiKey)
+          setApiKeyLoaded(true)
+          break
+        }
+        case 'api-key-saved': {
+          const savedApiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+          setApiKey(savedApiKey)
+          setApiKeyDraft(savedApiKey)
+          setApiKeyLoaded(true)
+          setIsSavingApiKey(false)
+          setShowApiKeyValue(false)
+          setPage('translate')
+          if (pendingUsageActionRef.current && !hasSeenUsageHintRef.current) {
+            setShowUsageHintModal(true)
+          } else {
+            setPendingUsageAction(null)
+          }
+          break
+        }
+        case 'api-key-cleared':
+          setApiKey('')
+          setApiKeyDraft('')
+          setApiKeyLoaded(true)
+          setIsSavingApiKey(false)
+          setShowApiKeyValue(false)
+          setPage('apiKey')
+          break
         case 'translation-started':
           setIsTranslateRunning(true)
           setIsBulkRunning(false)
@@ -975,6 +1021,10 @@ function Plugin() {
           setIsTranslateRunning(false)
           setIsBulkRunning(false)
           setIsSwapping(false)
+          setIsSavingApiKey(false)
+          if (typeof msg.message === 'string' && msg.message.toLowerCase().includes('api key')) {
+            setPage('apiKey')
+          }
           break
         case 'bulk-prefs-loaded':
           if (msg.bulkLanguages && msg.bulkLanguages.length > 0) {
@@ -1033,6 +1083,24 @@ function Plugin() {
     return () => window.removeEventListener('message', handler)
   }, [])
 
+  const activePage = page
+  const isApiKeyRequired = activePage === 'apiKey' && !apiKey.trim()
+  const trimmedApiKeyDraft = apiKeyDraft.trim()
+  const isApiKeyFormatValid = trimmedApiKeyDraft.length === 0 || /^sk_[A-Za-z0-9_]{16,}$/.test(trimmedApiKeyDraft)
+
+  const handleSaveApiKey = () => {
+    if (!trimmedApiKeyDraft) {
+      notifyInFigma('Please enter your API key to continue.', true)
+      return
+    }
+    if (!isApiKeyFormatValid) {
+      notifyInFigma('Please enter a valid Sarvam API key. It should start with sk_.', true)
+      return
+    }
+    setIsSavingApiKey(true)
+    parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey: trimmedApiKeyDraft } }, '*')
+  }
+
   const runTranslate = () => {
     if (isBulkRunning) {
       notifyInFigma('Please wait for bulk translate to finish before starting translate.', true)
@@ -1052,6 +1120,13 @@ function Plugin() {
   }
 
   const handleTranslate = () => {
+    if (!apiKey.trim()) {
+      setPendingUsageAction('translate')
+      setApiKeyDraft(apiKey)
+      setShowApiKeyValue(false)
+      setPage('apiKey')
+      return
+    }
     if (!hasSeenUsageHint) {
       setPendingUsageAction('translate')
       setShowUsageHintModal(true)
@@ -1082,6 +1157,13 @@ function Plugin() {
   }
 
   const handleBulkStressTest = () => {
+    if (!apiKey.trim()) {
+      setPendingUsageAction('bulk')
+      setApiKeyDraft(apiKey)
+      setShowApiKeyValue(false)
+      setPage('apiKey')
+      return
+    }
     if (!hasSeenUsageHint) {
       setPendingUsageAction('bulk')
       setShowUsageHintModal(true)
@@ -1149,21 +1231,36 @@ function Plugin() {
       value => typeof value === 'string' && value.trim().length > 0 && value !== 'skip'
     )
 
-  const isDedicatedPrefsPage = page === 'fontPrefs' || page === 'bulkPrefs'
+  const isDedicatedPrefsPage = activePage === 'fontPrefs' || activePage === 'bulkPrefs' || activePage === 'apiKey'
+
+  if (!apiKeyLoaded) {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-background font-sans antialiased">
+        <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
+          <Card className="w-full rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+            <CardContent className="flex items-center justify-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
       <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none'}`}>
         <div className={`px-5 py-4 ${isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
           <div className={isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-4'}>
-            {page === 'translate' || page === 'fontSwap' ? (
+            {activePage === 'translate' || activePage === 'fontSwap' ? (
               <div className="space-y-[8px] pt-1">
                 <div className="flex items-end gap-[18px]">
                   <button
                     type="button"
                     onClick={() => setPage('translate')}
                     className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
-                      page === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                      activePage === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                     }`}
                   >
                     <span>Translate</span>
@@ -1172,13 +1269,13 @@ function Plugin() {
                     type="button"
                     onClick={() => setPage('fontSwap')}
                     className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
-                      page === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                      activePage === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                     }`}
                   >
                     <span>Swap</span>
                   </button>
                 </div>
-                {page === 'translate' ? (
+                {activePage === 'translate' ? (
                   <div className="space-y-4">
                     <div ref={cardRailWrapperRef} className="relative z-10 -mx-5">
                       {selectedCardShadow ? (
@@ -1299,7 +1396,7 @@ function Plugin() {
                   </div>
                 )}
               </div>
-            ) : page === 'fontPrefs' ? (
+            ) : activePage === 'fontPrefs' ? (
               <div className="flex min-h-0 flex-1 flex-col gap-4">
                 <div className="flex items-center">
                   <button
@@ -1389,7 +1486,7 @@ function Plugin() {
                   )}
                 </div>
               </div>
-            ) : (
+            ) : activePage === 'bulkPrefs' ? (
               <div className="flex min-h-0 flex-1 flex-col gap-4">
                 <div className="flex items-center">
                   <button
@@ -1438,6 +1535,82 @@ function Plugin() {
                   </Button>
                 </div>
               </div>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col gap-4">
+                {!isApiKeyRequired ? (
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setPage('translate')}
+                      className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground underline"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">API Key</h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    Enter your Sarvam API key to use Lokal Translate.
+                  </p>
+                </div>
+
+                <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                  <CardContent className="space-y-4 p-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Sarvam API key</Label>
+                      <div className="flex gap-2">
+                        <input
+                          type={showApiKeyValue ? 'text' : 'password'}
+                          value={apiKeyDraft}
+                          onChange={event => setApiKeyDraft(event.target.value)}
+                          placeholder="sk_..."
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/20"
+                        />
+                        <button
+                          type="button"
+                          className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md border border-input bg-background px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setShowApiKeyValue(prev => !prev)}
+                        >
+                          {showApiKeyValue ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                      {!isApiKeyFormatValid ? (
+                        <p className="text-[11px] text-[#b42318]">
+                          Use a valid Sarvam key format starting with <span className="font-medium">sk_</span>.
+                        </p>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="mt-1 space-y-2">
+                  <Button
+                    className="w-full h-9 rounded-md text-sm"
+                    onClick={handleSaveApiKey}
+                    disabled={isSavingApiKey || trimmedApiKeyDraft.length === 0 || !isApiKeyFormatValid}
+                  >
+                    {isSavingApiKey ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving…
+                      </>
+                    ) : apiKey.trim() ? 'Update API key' : 'Save API key'}
+                  </Button>
+                  <a
+                    href="https://dashboard.sarvam.ai"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    Create API key (1000 free credits)
+                  </a>
+                </div>
+              </div>
             )}
             <StyleMappingModal
               open={styleMappingModalLang !== null}
@@ -1457,11 +1630,11 @@ function Plugin() {
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
 
-            {(page === 'translate' || page === 'fontSwap') ? <BrandingStrip /> : null}
+            {(activePage === 'translate' || activePage === 'fontSwap' || activePage === 'apiKey') ? <BrandingStrip /> : null}
           </div>
         </div>
       </div>
-      {page === 'translate' ? (
+      {activePage === 'translate' ? (
         <div className="flex items-center gap-4 bg-background px-5 pb-3 pt-2">
           <button
             type="button"
@@ -1488,6 +1661,17 @@ function Plugin() {
             }}
           >
             Help
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+            onClick={() => {
+              setApiKeyDraft(apiKey)
+              setShowApiKeyValue(false)
+              setPage('apiKey')
+            }}
+          >
+            API Key
           </button>
         </div>
       ) : null}

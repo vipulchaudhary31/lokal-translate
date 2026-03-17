@@ -8609,6 +8609,9 @@
   .text-\[\#C7CDD8\] {
     color: #C7CDD8;
   }
+  .text-\[\#b42318\] {
+    color: #b42318;
+  }
   .text-\[\#cc9a54\] {
     color: #cc9a54;
   }
@@ -9750,6 +9753,14 @@
   .focus\:z-10 {
     &:focus {
       z-index: 10;
+    }
+  }
+  .focus\:border-foreground\/20 {
+    &:focus {
+      border-color: var(--foreground);
+      @supports (color: color-mix(in lab, red, red)) {
+        border-color: color-mix(in oklab, var(--foreground) 20%, transparent);
+      }
     }
   }
   .focus\:bg-accent {
