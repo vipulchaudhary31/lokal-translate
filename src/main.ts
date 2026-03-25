@@ -730,29 +730,18 @@ async function translateWithStyledSegments(
   targetLanguage: string,
   sourceLanguage: string | undefined,
   session: SessionCache
-): Promise<{ success: boolean; weightMappings: string[] }> {
+): Promise<{ success: boolean; weightMappings: string[]; wasMixed: boolean }> {
   const segments = node.getStyledTextSegments([...STYLE_FIELDS])
-  if (segments.length === 0) return { success: false, weightMappings: [] }
+  if (segments.length === 0) return { success: false, weightMappings: [], wasMixed: false }
 
-  // When translating TO English, short isolated segments lose all translation context
-  // (e.g. "करा" alone vs. "अनलॉक करा 8 contacts." together).
-  // Fall back to whole-text translate so the full phrase is sent as one API call.
-  if (targetLanguage === 'en') {
-    const meaningfulSegments = segments.filter(s => s.characters.trim().length > 0)
-    const hasShortSegment = meaningfulSegments.some(s => s.characters.trim().length < 5)
-    if (meaningfulSegments.length > 1 && hasShortSegment) {
-      debugLog('translateWithStyledSegments: short segments detected for EN target — falling back to whole-text translate for better quality.')
-      return { success: false, weightMappings: [] }
-    }
-  }
-
+  const wasMixed = segments.length > 1
   const targetLang = targetLanguage
   const translatedParts: string[] = []
   for (const seg of segments) {
     const t = seg.characters.trim().length > 0
       ? await translateText(seg.characters, targetLang, sourceLanguage, session)
       : seg.characters
-    if (!t) return { success: false, weightMappings: [] }
+    if (!t) return { success: false, weightMappings: [], wasMixed }
     translatedParts.push(t)
   }
   const fullText = translatedParts.join('')
@@ -761,7 +750,7 @@ async function translateWithStyledSegments(
   // a clear message instead of silently doing nothing.
   if (fullText === node.characters) {
     debugLog('translateWithStyledSegments: no text change after segment translation, will fall back to whole-text translate.')
-    return { success: false, weightMappings: [] }
+    return { success: false, weightMappings: [], wasMixed }
   }
   const weightMappings: string[] = []
   const firstWeight = (segments[0].fontName as FontName)?.style || 'Regular'
@@ -786,7 +775,7 @@ async function translateWithStyledSegments(
     }
     runStart = runEnd
   }
-  return { success: true, weightMappings }
+  return { success: true, weightMappings, wasMixed }
 }
 
 // Function to apply font to text node while preserving original weight
@@ -2218,8 +2207,13 @@ figma.ui.onmessage = async (msg) => {
               node, msg.targetLanguage, sourceLanguage, session
             )
             if (segmentResult.success) {
-              const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
-              if (applied) debugLog(`✅ Applied matching style from file`)
+              // Only apply whole-node style mapping for uniform (single-style) nodes.
+              // For mixed-style nodes, translateWithStyledSegments already applied per-segment
+              // fonts/weights — calling setTextStyleIdAsync here would overwrite them.
+              if (!segmentResult.wasMixed) {
+                const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
+                if (applied) debugLog(`✅ Applied matching style from file`)
+              }
               weightMappings.push(...segmentResult.weightMappings)
               translatedCount++
               debugLog(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
@@ -2465,7 +2459,11 @@ figma.ui.onmessage = async (msg) => {
                   if (!applied) await applyFontToTextNode(node, targetLang)
                 }
               } else {
-                await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
+                // Only apply whole-node style mapping for uniform nodes — mixed nodes already
+                // have per-segment styles applied by translateWithStyledSegments.
+                if (!segmentResult.wasMixed) {
+                  await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
+                }
               }
             }
           } catch (err) {
