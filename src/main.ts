@@ -466,11 +466,20 @@ async function applyUserDefinedStyleMapping(
       debugLog('[Apply styles] Mapping is skip for:', key)
       return false
     }
-    // Try local styles first, then getStyleByIdAsync (works for library styles in doc)
+    // Resolve style by ID — try async API first (works for local + library), then async local scan
     let style: TextStyle | null = null
-    const localStyles = figma.getLocalTextStyles()
-    style = localStyles.find(s => s.id === target) ?? null
-    if (!style) style = await getLibraryTextStyleById(target)
+    try {
+      const found = await figma.getStyleByIdAsync(target)
+      style = found && found.type === 'TEXT' ? (found as TextStyle) : null
+    } catch { style = null }
+    if (!style) {
+      try {
+        const locals: TextStyle[] = typeof (figma as any).getLocalTextStylesAsync === 'function'
+          ? await (figma as any).getLocalTextStylesAsync()
+          : figma.getLocalTextStyles()
+        style = locals.find(s => s.id === target) ?? null
+      } catch { style = null }
+    }
     if (!style) {
       debugWarn('[Apply styles] Style not found (local or library):', target)
       return false
@@ -724,6 +733,19 @@ async function translateWithStyledSegments(
 ): Promise<{ success: boolean; weightMappings: string[] }> {
   const segments = node.getStyledTextSegments([...STYLE_FIELDS])
   if (segments.length === 0) return { success: false, weightMappings: [] }
+
+  // When translating TO English, short isolated segments lose all translation context
+  // (e.g. "करा" alone vs. "अनलॉक करा 8 contacts." together).
+  // Fall back to whole-text translate so the full phrase is sent as one API call.
+  if (targetLanguage === 'en') {
+    const meaningfulSegments = segments.filter(s => s.characters.trim().length > 0)
+    const hasShortSegment = meaningfulSegments.some(s => s.characters.trim().length < 5)
+    if (meaningfulSegments.length > 1 && hasShortSegment) {
+      debugLog('translateWithStyledSegments: short segments detected for EN target — falling back to whole-text translate for better quality.')
+      return { success: false, weightMappings: [] }
+    }
+  }
+
   const targetLang = targetLanguage
   const translatedParts: string[] = []
   for (const seg of segments) {
@@ -1099,12 +1121,18 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
     if (!cleanText || cleanText.length === 0) return text
     const truncatedText = cleanText.length > 1000 ? cleanText.substring(0, 1000) : cleanText
     const norm = normalizeTextForCache(truncatedText)
-    // Skip only if text is already in target script. LID can misclassify Latin names (e.g. "Srinivasalu Reddy")
-    // as Telugu; if text is in Latin script we must call the API so it can transliterate to target script.
+    // Skip only if text is already purely in the target script (same rule as translateText).
     const detected = await detectLanguage(truncatedText, session)
-    if (detected === targetLanguage && isInIndicScript(truncatedText)) {
-      debugLog(`Skipping transliterate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
-      return text
+    if (targetLanguage === 'en') {
+      if (!isInIndicScript(truncatedText)) {
+        debugLog(`Skipping transliterate to English: no Indic script ("${truncatedText.substring(0, 30)}...")`)
+        return text
+      }
+    } else {
+      if (detected === targetLanguage && isInIndicScript(truncatedText)) {
+        debugLog(`Skipping transliterate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
+        return text
+      }
     }
     const sk = `${sourceLanguage}|${targetLanguage}|${norm}`
     if (session?.tl) {
@@ -1183,12 +1211,25 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     const truncatedText = cleanText.length > 2000 ? cleanText.substring(0, 2000) : cleanText
     const norm = normalizeTextForCache(truncatedText)
     
-    // Skip only if text is already in target script. LID can misclassify Latin names (e.g. "Srinivasalu Reddy")
-    // as Telugu; if text is in Latin script we must call the API so it can translate/transliterate.
+    // Skip only if the text is already purely in the target language.
+    //
+    // For English target: skip ONLY when there is no Indic script at all (already pure
+    // English/numbers). We must NOT skip mixed segments like "करा 8 contacts." even if LID
+    // returns 'en' — those still contain Indic characters that need translating.
+    //
+    // For Indic target: skip when the text is already in that Indic script AND LID agrees,
+    // but still call the API for Latin-script text (LID can misclassify e.g. "Srinivasalu Reddy").
     const detected = await detectLanguage(truncatedText, session)
-    if (detected === targetLanguage && isInIndicScript(truncatedText)) {
-      debugLog(`Skipping translate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
-      return text
+    if (targetLanguage === 'en') {
+      if (!isInIndicScript(truncatedText)) {
+        debugLog(`Skipping translate to English: no Indic script found ("${truncatedText.substring(0, 30)}...")`)
+        return text
+      }
+    } else {
+      if (detected === targetLanguage && isInIndicScript(truncatedText)) {
+        debugLog(`Skipping translate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
+        return text
+      }
     }
     
     let sourceCode: string
@@ -1370,7 +1411,12 @@ const TEXT_STYLE_DEFINITIONS: TextStyleDefinition[] = [
 // Function to get or create text style. When createIfMissing is false (translation), never create new styles.
 async function getOrCreateTextStyle(fontFamily: string, definition: TextStyleDefinition, createIfMissing: boolean = true): Promise<TextStyle | null> {
   // First try to find the style by its properties
-  const allStyles = figma.getLocalTextStyles()
+  let allStyles: TextStyle[]
+  try {
+    allStyles = await (figma as any).getLocalTextStylesAsync()
+  } catch {
+    allStyles = figma.getLocalTextStyles()
+  }
   
   debugLog('\n=== GET OR CREATE TEXT STYLE ===')
   debugLog('Looking for text style:', {
@@ -1773,6 +1819,159 @@ async function swapFontFamily(textNode: TextNode, targetFont: string): Promise<'
   }
 }
 
+// ─── Partial text-range selection helpers ────────────────────────────────────
+
+type SelectedTextRangeInfo = { node: TextNode; start: number; end: number }
+
+/**
+ * Returns the active highlighted text range when the user has selected a
+ * strict substring inside a text layer (not the entire layer text).
+ * Returns null in all other cases so we fall through to the normal whole-layer path.
+ */
+function getActiveSelectedTextRange(): SelectedTextRangeInfo | null {
+  const raw = (figma.currentPage as any)?.selectedTextRange
+  if (!raw || typeof raw !== 'object') return null
+
+  const start = Number((raw as any).start)
+  const end   = Number((raw as any).end)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+
+  // Resolve the node the range belongs to
+  let node: BaseNode | null = null
+  const nodeId = (raw as any).nodeId ?? (raw as any).id
+  if (typeof nodeId === 'string') {
+    node = figma.getNodeById(nodeId)
+  } else if ((raw as any).node && typeof (raw as any).node === 'object') {
+    node = (raw as any).node as BaseNode
+  }
+  if (!node || (node as SceneNode).type !== 'TEXT') return null
+
+  const textNode = node as TextNode
+  const len = textNode.characters?.length ?? 0
+  const s = Math.max(0, Math.min(start, len))
+  const e = Math.max(0, Math.min(end, len))
+  if (e <= s) return null
+
+  // Only treat as "partial" when it is a strict subset – full-text selection
+  // goes through the normal whole-layer flow (preserves style-mapping behaviour).
+  if (s === 0 && e === len) return null
+
+  return { node: textNode, start: s, end: e }
+}
+
+/**
+ * Translate only the highlighted portion of a text node.
+ *
+ * Strategy to preserve all styling:
+ *  1. Snapshot every styled segment for the whole node.
+ *  2. Translate the selected substring.
+ *  3. Set node.characters = before + translated + after.
+ *  4. Re-apply original segment styles for "before" and "after" portions.
+ *  5. Apply target font (and mapped style if available) to the translated portion.
+ */
+async function translateSelectedRange(
+  node: TextNode,
+  start: number,
+  end: number,
+  targetLanguage: string,
+  sourceLanguage: string | undefined,
+  session: SessionCache
+): Promise<{ success: boolean; notified: boolean }> {
+  const fullText    = node.characters
+  const selected    = fullText.substring(start, end)
+  const trimmed     = selected.trim()
+
+  if (!trimmed) {
+    figma.notify('Please select some text (not just spaces) to translate.', { error: true })
+    return { success: false, notified: true }
+  }
+
+  // 1. Snapshot ALL segment styles before we touch anything
+  const segments = node.getStyledTextSegments([...STYLE_FIELDS])
+
+  // 2. Translate the selection
+  const translated = await translateText(selected, targetLanguage, sourceLanguage, session)
+  const cleaned    = translated ? cleanupTranslation(translated) : ''
+  const replacement = cleaned && cleaned.trim().length > 0 ? cleaned : selected // keep original on empty result
+
+  // 3. Load all fonts currently in the node (required before modifying characters)
+  await loadAllFontsForTextNode(node)
+
+  // 4. Determine source style for the first character of the selected range
+  //    (used for style-mapping lookup, same as whole-layer path)
+  const srcFont = node.getRangeFontName(start, Math.min(start + 1, fullText.length))
+  const srcFontName: FontName = srcFont !== figma.mixed && srcFont
+    ? (srcFont as FontName)
+    : { family: 'Noto Sans', style: 'Regular' }
+  const srcFontSize = node.getRangeFontSize(start, Math.min(start + 1, fullText.length))
+  const srcSize = typeof srcFontSize === 'number' ? srcFontSize : (typeof node.fontSize === 'number' ? node.fontSize : 16)
+  const srcLhRaw = node.getRangeLineHeight(start, Math.min(start + 1, fullText.length))
+  const srcLh = (srcLhRaw !== figma.mixed && srcLhRaw && typeof srcLhRaw === 'object' && 'value' in srcLhRaw && (srcLhRaw as any).unit === 'PIXELS')
+    ? (srcLhRaw as any).value as number : null
+  const sourceStyleOverride: SourceStyle = { font: srcFontName.family, size: srcSize, lh: srcLh, weight: srcFontName.style || 'Regular' }
+
+  // 5. Pre-load the target font we'll apply to the translated range
+  const targetFontName = await getTargetFontForRange(targetLanguage, srcFontName.style || 'Regular')
+  if (targetFontName) await loadFontCached(targetFontName)
+
+  // 6. Rebuild characters: before + replacement + after
+  const before = fullText.substring(0, start)
+  const after  = fullText.substring(end)
+  const newText = before + replacement + after
+
+  // Need a valid base font before setting characters (prevents "font not loaded" errors)
+  const baseFont = targetFontName ?? srcFontName
+  await loadFontCached(baseFont)
+  node.fontName = baseFont
+  node.characters = newText
+
+  const replacementEnd = start + replacement.length
+
+  // 7. Re-apply original segment styles to the BEFORE and AFTER portions
+  let cursor = 0
+  for (const seg of segments) {
+    const segEnd = cursor + seg.characters.length
+    // "before" portion: restore original style
+    const bStart = Math.max(cursor, 0)
+    const bEnd   = Math.min(segEnd, start)
+    if (bEnd > bStart) {
+      const origFont = seg.fontName && typeof (seg.fontName as FontName).family === 'string' ? (seg.fontName as FontName) : null
+      await applySegmentStylesToRange(node, bStart, bEnd, seg as SegmentStyle, origFont)
+    }
+    // "after" portion: restore original style, offset by delta
+    const delta   = replacement.length - (end - start)
+    const aOrigStart = Math.max(cursor, end)
+    const aOrigEnd   = Math.min(segEnd, fullText.length)
+    if (aOrigEnd > aOrigStart) {
+      const aStart = aOrigStart + delta
+      const aEnd   = aOrigEnd  + delta
+      if (aEnd > aStart && aStart >= 0 && aEnd <= newText.length) {
+        const origFont = seg.fontName && typeof (seg.fontName as FontName).family === 'string' ? (seg.fontName as FontName) : null
+        await applySegmentStylesToRange(node, aStart, aEnd, seg as SegmentStyle, origFont)
+      }
+    }
+    cursor = segEnd
+  }
+
+  // 8. Apply target font to ONLY the translated range.
+  //    We cannot use applyUserDefinedStyleMapping / setTextStyleIdAsync here because
+  //    those apply to the whole node — which would restyle text outside the selection.
+  //    Instead we apply font changes range-by-range using setRangeFontName.
+  if (replacementEnd > start) {
+    const fontToApply = targetFontName ?? srcFontName
+    await loadFontCached(fontToApply)
+    node.setRangeFontName(start, replacementEnd, fontToApply)
+    node.setRangeFontSize(start, replacementEnd, srcSize)
+    if (srcLh != null) {
+      node.setRangeLineHeight(start, replacementEnd, { value: srcLh, unit: 'PIXELS' })
+    }
+  }
+
+  return { success: true, notified: false }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Message handler for translation requests
 figma.ui.onmessage = async (msg) => {
   debugLog('\n=== MESSAGE RECEIVED ===')
@@ -1787,6 +1986,48 @@ figma.ui.onmessage = async (msg) => {
       await requireSarvamApiKey()
       await loadFontPrefs()
       await reloadStyleMappings()
+
+      // ── Partial text-range selection ──────────────────────────────────────
+      // If the user has highlighted a strict substring inside a text layer,
+      // translate only that portion and leave everything else intact.
+      const selectedRange = getActiveSelectedTextRange()
+      if (selectedRange) {
+        figma.ui.postMessage({ type: 'translation-started', count: 1 })
+        figma.ui.postMessage({
+          type: 'translation-progress', current: 1, total: 1,
+          message: 'Translating selected text…'
+        })
+        const session = createSessionCache()
+        const sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
+        try {
+          const result = await translateSelectedRange(
+            selectedRange.node, selectedRange.start, selectedRange.end,
+            msg.targetLanguage, sourceLanguage, session
+          )
+          if (!result.notified) {
+            figma.ui.postMessage({
+              type: 'translation-complete', count: 1, errors: 0, total: 1,
+              weightMappings: [], errorMessages: []
+            })
+            if (result.success) figma.notify('✅ Translated selected text!')
+          } else {
+            figma.ui.postMessage({
+              type: 'translation-complete', count: 0, errors: 1, total: 1,
+              weightMappings: [], errorMessages: []
+            })
+          }
+        } catch (rangeErr) {
+          const errMsg = rangeErr instanceof Error ? rangeErr.message : 'Unknown error'
+          figma.notify(`❌ ${errMsg}`, { error: true })
+          figma.ui.postMessage({
+            type: 'translation-complete', count: 0, errors: 1, total: 1,
+            weightMappings: [], errorMessages: [errMsg]
+          })
+        }
+        return
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const selection = figma.currentPage.selection
       
       // Filter selection: containers (frames, groups, sections, components, instances) and text layers
@@ -2266,32 +2507,43 @@ figma.ui.onmessage = async (msg) => {
   } else if (msg.type === 'get-styles-for-font') {
     try {
       const fontFamily = typeof msg.fontFamily === 'string' ? msg.fontFamily : ''
-      const all = figma.getLocalTextStyles()
-      const matching = all.filter(s => {
-        try {
-          if (typeof s.fontName !== 'object' || !s.fontName) return false
-          return (s.fontName as FontName).family === fontFamily
-        } catch { return false }
-      })
-      const styles = matching.map(s => {
+      // Use async API (synchronous getLocalTextStyles is deprecated in newer Figma runtime)
+      let all: TextStyle[]
+      try {
+        all = await (figma as any).getLocalTextStylesAsync()
+      } catch {
+        all = figma.getLocalTextStyles()
+      }
+      // Return ALL local text styles (not filtered by font family), sorted: requested font first, then alphabetical
+      const styles = all.map(s => {
         const fs = typeof s.fontSize === 'number' ? s.fontSize : null
         let lh: number | null = null
         if (s.lineHeight && typeof s.lineHeight === 'object' && 'value' in s.lineHeight && s.lineHeight.unit === 'PIXELS') {
           lh = (s.lineHeight as { value: number }).value
         }
         let weight = 'Regular'
+        let family = ''
         try {
           const fn = s.fontName as FontName | symbol
-          if (fn && typeof fn === 'object' && 'style' in fn && typeof (fn as FontName).style === 'string') {
-            weight = (fn as FontName).style
+          if (fn && typeof fn === 'object' && 'family' in fn) {
+            family = (fn as FontName).family || ''
+            weight = (fn as FontName).style || 'Regular'
           }
         } catch { /* ignore */ }
         const sizeStr = fs != null && lh != null ? `${fs}px / ${lh}px` : fs != null ? `${fs}px` : ''
-        return { id: s.id, name: s.name, fontSize: fs, lineHeight: lh, weight, sizeStr }
+        return { id: s.id, name: s.name, fontSize: fs, lineHeight: lh, weight, sizeStr, family }
+      }).sort((a, b) => {
+        // Styles matching the requested font family sort first
+        const aMatch = fontFamily && a.family === fontFamily ? 0 : 1
+        const bMatch = fontFamily && b.family === fontFamily ? 0 : 1
+        if (aMatch !== bMatch) return aMatch - bMatch
+        return a.name.localeCompare(b.name)
       })
       figma.ui.postMessage({ type: 'styles-for-font-loaded', fontFamily, styles })
     } catch (e) {
-      figma.notify('Could not load target styles right now.', { error: true })
+      const details = e instanceof Error ? e.message : String(e)
+      console.error('[get-styles-for-font] Failed:', details, e)
+      figma.notify(`Could not load target styles right now.`, { error: true })
       figma.ui.postMessage({ type: 'styles-for-font-loaded', fontFamily: '', styles: [] })
       figma.ui.postMessage({
         type: 'style-mapping-feedback',
