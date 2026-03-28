@@ -15,7 +15,11 @@ const SARVAM_API_KEY_STORAGE_KEY = 'ai-translate-sarvam-api-key'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
+const SARVAM_CHAT_COMPLETIONS_URL = 'https://api.sarvam.ai/v1/chat/completions'
 const MAYURA_TRANSLATE_MAX_CHARS = 1000
+const SARVAM_TRANSLATE_MAX_CHARS = 2000
+const REFINE_MAX_CHARS = 2000
+const REFINE_MODEL = 'sarvam-30b-16k'
 
 // Language mapping for Sarvam API
 const LANGUAGE_CODES: Record<string, string> = {
@@ -29,6 +33,35 @@ const LANGUAGE_CODES: Record<string, string> = {
   'bn': 'bn-IN',
   'pa': 'pa-IN',
   'gu': 'gu-IN'
+}
+
+type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial'
+type ApiTranslationMode = 'formal' | 'classic-colloquial' | 'modern-colloquial'
+type TranslationRequestConfig = {
+  model: 'sarvam-translate:v1' | 'mayura:v1'
+  mode: ApiTranslationMode
+  maxChars: number
+  modelLabel: string
+}
+type RefineSelectionContext = {
+  canRefine: boolean
+  kind: 'node' | 'range' | 'invalid'
+  text: string
+  charCount: number
+  nodeId?: string
+  nodeName?: string
+  start?: number
+  end?: number
+  message?: string
+}
+type RefineSuggestion = {
+  label: string
+  text: string
+  note?: string
+}
+type RefineResponse = {
+  suggestions: RefineSuggestion[]
+  synonyms: string[]
 }
 
 // Any node with children can contain text - support frames, groups, sections, components, instances,
@@ -62,23 +95,144 @@ function getNodeLocation(node: SceneNode): string {
   return `"${layerName}"`
 }
 
-class MayuraTranslateLengthError extends Error {
+class TranslationLengthError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = 'MayuraTranslateLengthError'
+    this.name = 'TranslationLengthError'
   }
 }
 
-function getMayuraTranslateLimitMessage(subject: string, charCount: number): string {
-  return `Mayura supports up to ${MAYURA_TRANSLATE_MAX_CHARS} characters per translation request. ${subject} has ${charCount} characters. Please select less text and try again.`
+function getTranslationConfig(mode: TranslationMode): TranslationRequestConfig {
+  if (mode === 'sarvam-translate') {
+    return {
+      model: 'sarvam-translate:v1',
+      mode: 'formal',
+      maxChars: SARVAM_TRANSLATE_MAX_CHARS,
+      modelLabel: 'Sarvam Translate v1',
+    }
+  }
+
+  return {
+    model: 'mayura:v1',
+    mode,
+    maxChars: MAYURA_TRANSLATE_MAX_CHARS,
+    modelLabel: 'Mayura',
+  }
 }
 
-function assertMayuraTranslateLength(text: string, subject: string): string {
+function getTranslateLimitMessage(config: TranslationRequestConfig, subject: string, charCount: number): string {
+  return `${config.modelLabel} supports up to ${config.maxChars} characters per translation request. ${subject} has ${charCount} characters. Please select less text and try again.`
+}
+
+function assertTranslateLength(text: string, subject: string, config: TranslationRequestConfig): string {
   const cleanText = text.trim()
-  if (cleanText.length > MAYURA_TRANSLATE_MAX_CHARS) {
-    throw new MayuraTranslateLengthError(getMayuraTranslateLimitMessage(subject, cleanText.length))
+  if (cleanText.length > config.maxChars) {
+    throw new TranslationLengthError(getTranslateLimitMessage(config, subject, cleanText.length))
   }
   return cleanText
+}
+
+function getAlreadyTranslatedMessage(targetLanguage: string): string {
+  const targetLabel = BULK_LANGUAGE_LABELS[targetLanguage] || (targetLanguage === 'en' ? 'English' : targetLanguage)
+  return `Selected text is already in ${targetLabel}.`
+}
+
+function assertRefineLength(text: string, subject: string): string {
+  const cleanText = text.trim()
+  if (cleanText.length > REFINE_MAX_CHARS) {
+    throw new Error(`Refine supports up to ${REFINE_MAX_CHARS} characters at a time. ${subject} has ${cleanText.length} characters. Please select less text and try again.`)
+  }
+  return cleanText
+}
+
+function getRefineIntentInstruction(intent: string): string {
+  switch (intent) {
+    case 'shorter':
+      return 'Make the copy shorter and tighter while preserving the meaning.'
+    case 'stronger-cta':
+      return 'Generate stronger, clearer CTA-style rewrites with more action and urgency.'
+    case 'softer':
+      return 'Make the copy softer, friendlier, and less forceful.'
+    case 'premium':
+      return 'Make the copy feel more premium, polished, and elevated.'
+    case 'local':
+      return 'Make the copy feel more natural, local, and idiomatic for everyday usage.'
+    default:
+      return 'Generate strong alternative phrasings that preserve the original meaning.'
+  }
+}
+
+function sanitizeRefineText(text: string): string {
+  return text
+    .replace(/^[-*•\d.)\s]+/, '')
+    .replace(/^["“”']+|["“”']+$/g, '')
+    .trim()
+}
+
+function extractJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  return text.slice(start, end + 1)
+}
+
+function normalizeRefineResponse(raw: unknown): RefineResponse {
+  const obj = raw && typeof raw === 'object' ? raw as { suggestions?: unknown; synonyms?: unknown } : {}
+  const suggestions = Array.isArray(obj.suggestions)
+    ? obj.suggestions
+        .map((item, index) => {
+          const entry = item && typeof item === 'object' ? item as { label?: unknown; text?: unknown; note?: unknown } : {}
+          const text = typeof entry.text === 'string' ? sanitizeRefineText(entry.text) : ''
+          if (!text) return null
+          return {
+            label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : `Option ${index + 1}`,
+            text,
+            note: typeof entry.note === 'string' && entry.note.trim() ? entry.note.trim() : undefined,
+          } satisfies RefineSuggestion
+        })
+        .filter((item): item is RefineSuggestion => item !== null)
+    : []
+
+  const dedupedSuggestions = suggestions.filter((item, index, list) =>
+    list.findIndex(candidate => candidate.text === item.text) === index
+  ).slice(0, 5)
+
+  const synonyms = Array.isArray(obj.synonyms)
+    ? obj.synonyms
+        .map(item => typeof item === 'string' ? sanitizeRefineText(item) : '')
+        .filter(Boolean)
+        .filter((item, index, list) => list.indexOf(item) === index)
+        .slice(0, 6)
+    : []
+
+  return { suggestions: dedupedSuggestions, synonyms }
+}
+
+function fallbackRefineResponse(content: string): RefineResponse {
+  const suggestions = content
+    .split('\n')
+    .map(line => sanitizeRefineText(line))
+    .filter(Boolean)
+    .filter(line => line.length > 2)
+    .slice(0, 4)
+    .map((text, index) => ({ label: `Option ${index + 1}`, text }))
+  return { suggestions, synonyms: [] }
+}
+
+async function isTextAlreadyInTargetLanguage(
+  text: string,
+  targetLanguage: string,
+  session?: SessionCache
+): Promise<boolean> {
+  const cleanText = text.trim()
+  if (!cleanText) return false
+
+  if (targetLanguage === 'en') {
+    return !isInIndicScript(cleanText)
+  }
+
+  const detected = await detectLanguage(cleanText, session)
+  return detected === targetLanguage && isInIndicScript(cleanText)
 }
 
 // Languages for bulk stress test (English → all Indian languages)
@@ -749,7 +903,8 @@ async function translateWithStyledSegments(
   node: TextNode,
   targetLanguage: string,
   sourceLanguage: string | undefined,
-  session: SessionCache
+  session: SessionCache,
+  mode: TranslationMode = 'sarvam-translate'
 ): Promise<{ success: boolean; weightMappings: string[]; wasMixed: boolean }> {
   const segments = node.getStyledTextSegments([...STYLE_FIELDS])
   if (segments.length === 0) return { success: false, weightMappings: [], wasMixed: false }
@@ -759,7 +914,7 @@ async function translateWithStyledSegments(
   const translatedParts: string[] = []
   for (const seg of segments) {
     const t = seg.characters.trim().length > 0
-      ? await translateText(seg.characters, targetLang, sourceLanguage, session)
+      ? await translateText(seg.characters, targetLang, sourceLanguage, session, mode)
       : seg.characters
     if (!t) return { success: false, weightMappings: [], wasMixed }
     translatedParts.push(t)
@@ -891,11 +1046,11 @@ function cleanupTranslation(translation: string): string {
 // Session cache for current run (avoids redundant API/storage calls for repeated texts)
 const RATE_LIMIT_MS = 50
 type SessionCache = {
-  lid: Map<string, string>; tr: Map<string, string>; tl: Map<string, string>;
+  lid: Map<string, string>; tr: Map<string, string>; tl: Map<string, string>; rf: Map<string, RefineResponse>;
   lastApiTime?: number;
 }
 function createSessionCache(): SessionCache {
-  return { lid: new Map(), tr: new Map(), tl: new Map(), lastApiTime: 0 }
+  return { lid: new Map(), tr: new Map(), tl: new Map(), rf: new Map(), lastApiTime: 0 }
 }
 async function rateLimitBeforeApiCall(session?: SessionCache): Promise<void> {
   if (!session) return
@@ -992,6 +1147,169 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     console.error('Language detection error:', error)
     return 'en' // Default to English on error
   }
+}
+
+async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
+  const selectedRange = await getActiveSelectedTextRange()
+  if (selectedRange) {
+    const selectedText = selectedRange.node.characters.slice(selectedRange.start, selectedRange.end)
+    const cleanText = selectedText.trim()
+    if (!cleanText) {
+      return {
+        canRefine: false,
+        kind: 'invalid',
+        text: '',
+        charCount: 0,
+        message: 'Highlight some text to refine.',
+      }
+    }
+    return {
+      canRefine: true,
+      kind: 'range',
+      text: selectedText,
+      charCount: cleanText.length,
+      nodeId: selectedRange.node.id,
+      nodeName: selectedRange.node.name || 'Text',
+      start: selectedRange.start,
+      end: selectedRange.end,
+    }
+  }
+
+  const selection = figma.currentPage.selection
+  if (selection.length !== 1 || selection[0].type !== 'TEXT') {
+    return {
+      canRefine: false,
+      kind: 'invalid',
+      text: '',
+      charCount: 0,
+      message: 'Select one text layer or highlight a text range to refine.',
+    }
+  }
+
+  const node = selection[0] as TextNode
+  const cleanText = node.characters.trim()
+  if (!cleanText) {
+    return {
+      canRefine: false,
+      kind: 'invalid',
+      text: '',
+      charCount: 0,
+      message: 'The selected text layer is empty.',
+    }
+  }
+
+  return {
+    canRefine: true,
+    kind: 'node',
+    text: node.characters,
+    charCount: cleanText.length,
+    nodeId: node.id,
+    nodeName: node.name || 'Text',
+  }
+}
+
+async function generateRefineOptions(
+  text: string,
+  intent: string,
+  customPrompt: string,
+  kind: 'node' | 'range',
+  session?: SessionCache
+): Promise<RefineResponse> {
+  const apiKey = await requireSarvamApiKey()
+  const cleanText = assertRefineLength(text, 'Selected text')
+  const normalizedIntent = normalizeTextForCache(intent || 'alternatives')
+  const normalizedPrompt = normalizeTextForCache(customPrompt || '')
+  const normalizedText = normalizeTextForCache(cleanText)
+  const key = cacheKey('rf', REFINE_MODEL, normalizedIntent, normalizedPrompt || '-', normalizedText)
+  const sessionKey = `${REFINE_MODEL}|${normalizedIntent}|${normalizedPrompt}|${normalizedText}`
+
+  if (session?.rf) {
+    const hit = session.rf.get(sessionKey)
+    if (hit) return hit
+  }
+
+  const cached = await getCached<RefineResponse>(key)
+  if (cached != null) {
+    session?.rf?.set(sessionKey, cached)
+    return cached
+  }
+
+  const requestBody = {
+    model: REFINE_MODEL,
+    temperature: 0.35,
+    top_p: 1,
+    max_tokens: 700,
+    n: 1,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          'You are a multilingual UX copy refiner for Figma text layers.',
+          'Return strict JSON only.',
+          'Output shape: {"suggestions":[{"label":"...","text":"...","note":"..."}],"synonyms":["..."]}.',
+          'Generate 4 suggestion objects.',
+          'Keep the output in the same language and script as the source text unless the custom instruction explicitly asks for another language or script.',
+          'Preserve the core meaning unless the custom instruction says otherwise.',
+          'If the source text is short UI copy like a CTA, label, tab, or headline, keep suggestions short and UI-friendly.',
+          'Use distinct angles across the suggestions.',
+          'synonyms should contain 0 to 6 short near-equivalent words or phrases when meaningful. Otherwise return an empty list.',
+          'Do not include markdown, code fences, numbering, or commentary outside JSON.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: [
+          `Selection kind: ${kind}.`,
+          `Refinement goal: ${getRefineIntentInstruction(intent)}.`,
+          `Custom instruction: ${customPrompt.trim() || 'None.'}`,
+          `Source text: """${cleanText}"""`,
+        ].join('\n'),
+      },
+    ],
+  }
+
+  await rateLimitBeforeApiCall(session)
+  const response = await fetchWithTimeout(SARVAM_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      'api-subscription-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  const responseText = await response.text()
+  if (!response.ok) {
+    const errMsg = parseSarvamErrorBody(responseText, response.status)
+    throw new Error(errMsg)
+  }
+
+  const data = JSON.parse(responseText) as {
+    choices?: Array<{ message?: { content?: string } }>
+  }
+  const content = data.choices?.[0]?.message?.content?.trim() || ''
+  const parsed = (() => {
+    if (!content) return { suggestions: [], synonyms: [] } satisfies RefineResponse
+    const jsonBlock = extractJsonObject(content)
+    if (jsonBlock) {
+      try {
+        return normalizeRefineResponse(JSON.parse(jsonBlock))
+      } catch {
+        return fallbackRefineResponse(content)
+      }
+    }
+    return fallbackRefineResponse(content)
+  })()
+
+  if (parsed.suggestions.length === 0) {
+    throw new Error('Could not generate refine options right now. Please try again.')
+  }
+
+  session?.rf?.set(sessionKey, parsed)
+  await setCached(key, parsed)
+  await trimCacheIfNeeded()
+  return parsed
 }
 
 // Function to check if a node or any of its parents should be excluded from translation (DND)
@@ -1212,10 +1530,17 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
 }
 
 // Function to call Sarvam AI translation API
-async function translateText(text: string, targetLanguage: string, sourceLanguage?: string, session?: SessionCache): Promise<string> {
+async function translateText(
+  text: string,
+  targetLanguage: string,
+  sourceLanguage?: string,
+  session?: SessionCache,
+  mode: TranslationMode = 'sarvam-translate'
+): Promise<string> {
   try {
     const apiKey = await requireSarvamApiKey()
-    const cleanText = assertMayuraTranslateLength(text, 'Selected text')
+    const config = getTranslationConfig(mode)
+    const cleanText = assertTranslateLength(text, 'Selected text', config)
     if (!cleanText || cleanText.length === 0) return text
     const norm = normalizeTextForCache(cleanText)
     
@@ -1247,9 +1572,9 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
       sourceCode = LANGUAGE_CODES[detected] || 'en-IN'
     }
     const targetCode = LANGUAGE_CODES[targetLanguage] || targetLanguage
-    const cacheKeyStr = cacheKey('tr', sourceCode, targetCode, norm)
+    const cacheKeyStr = cacheKey('tr', config.model, sourceCode, targetCode, config.mode, norm)
     
-    const sk = `${sourceCode}|${targetCode}|${norm}`
+    const sk = `${config.model}|${sourceCode}|${targetCode}|${config.mode}|${norm}`
     if (session?.tr) {
       const hit = session.tr.get(sk)
       if (hit != null) return hit
@@ -1265,8 +1590,8 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
       input: cleanText,
       source_language_code: sourceCode,
       target_language_code: targetCode,
-      model: 'mayura:v1',
-      mode: 'formal',
+      model: config.model,
+      mode: config.mode,
       numerals_format: 'international'
     }
     
@@ -1836,7 +2161,7 @@ type SelectedTextRangeInfo = { node: TextNode; start: number; end: number }
  * strict substring inside a text layer (not the entire layer text).
  * Returns null in all other cases so we fall through to the normal whole-layer path.
  */
-function getActiveSelectedTextRange(): SelectedTextRangeInfo | null {
+async function getActiveSelectedTextRange(): Promise<SelectedTextRangeInfo | null> {
   const raw = (figma.currentPage as any)?.selectedTextRange
   if (!raw || typeof raw !== 'object') return null
 
@@ -1848,7 +2173,7 @@ function getActiveSelectedTextRange(): SelectedTextRangeInfo | null {
   let node: BaseNode | null = null
   const nodeId = (raw as any).nodeId ?? (raw as any).id
   if (typeof nodeId === 'string') {
-    node = figma.getNodeById(nodeId)
+    node = await figma.getNodeByIdAsync(nodeId)
   } else if ((raw as any).node && typeof (raw as any).node === 'object') {
     node = (raw as any).node as BaseNode
   }
@@ -1883,7 +2208,8 @@ async function translateSelectedRange(
   end: number,
   targetLanguage: string,
   sourceLanguage: string | undefined,
-  session: SessionCache
+  session: SessionCache,
+  mode: TranslationMode = 'sarvam-translate'
 ): Promise<{ success: boolean; notified: boolean }> {
   const fullText    = node.characters
   const selected    = fullText.substring(start, end)
@@ -1898,7 +2224,7 @@ async function translateSelectedRange(
   const segments = node.getStyledTextSegments([...STYLE_FIELDS])
 
   // 2. Translate the selection
-  const translated = await translateText(selected, targetLanguage, sourceLanguage, session)
+  const translated = await translateText(selected, targetLanguage, sourceLanguage, session, mode)
   const cleaned    = translated ? cleanupTranslation(translated) : ''
   const replacement = cleaned && cleaned.trim().length > 0 ? cleaned : selected // keep original on empty result
 
@@ -1978,6 +2304,42 @@ async function translateSelectedRange(
   return { success: true, notified: false }
 }
 
+async function applyRefineSuggestionToNode(
+  nodeId: string,
+  replacementText: string,
+  kind: 'node' | 'range',
+  start?: number,
+  end?: number
+): Promise<void> {
+  const node = await figma.getNodeByIdAsync(nodeId)
+  if (!node || node.type !== 'TEXT') {
+    throw new Error('The selected text layer is no longer available.')
+  }
+
+  const textNode = node as TextNode
+  const replacement = replacementText.trim()
+  if (!replacement) {
+    throw new Error('Suggestion text is empty.')
+  }
+
+  await loadAllFontsForTextNode(textNode)
+
+  if (kind === 'range' && typeof start === 'number' && typeof end === 'number' && end > start) {
+    textNode.deleteCharacters(start, end)
+    textNode.insertCharacters(start, replacement, start > 0 ? 'BEFORE' : 'AFTER')
+  } else {
+    if (!textNode.characters || textNode.characters.length === 0) {
+      const fallbackFont: FontName = { family: 'Inter', style: 'Regular' }
+      await loadFontCached(fallbackFont)
+      textNode.fontName = fallbackFont
+    }
+    textNode.characters = replacement
+  }
+
+  figma.currentPage.selection = [textNode]
+  figma.viewport.scrollAndZoomIntoView([textNode])
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Message handler for translation requests
@@ -1989,19 +2351,85 @@ figma.ui.onmessage = async (msg) => {
     type: msg.type
   })
   
-  if (msg.type === 'translate') {
+  if (msg.type === 'get-refine-context') {
+    try {
+      const context = await getRefineSelectionContext()
+      figma.ui.postMessage({ type: 'refine-context', context })
+    } catch (error) {
+      const errMsg = getApiErrorMessage(error, 'Refine')
+      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      figma.notify(errMsg, { error: true })
+    }
+  } else if (msg.type === 'refine-generate') {
+    try {
+      await requireSarvamApiKey()
+      const context = await getRefineSelectionContext()
+      if (!context.canRefine || !context.nodeId) {
+        const message = context.message || 'Select one text layer or highlight a text range to refine.'
+        figma.ui.postMessage({ type: 'refine-error', message })
+        figma.notify(message, { error: true })
+        return
+      }
+
+      figma.ui.postMessage({ type: 'refine-started' })
+      const session = createSessionCache()
+      const result = await generateRefineOptions(
+        context.text,
+        typeof msg.intent === 'string' ? msg.intent : 'alternatives',
+        typeof msg.customPrompt === 'string' ? msg.customPrompt : '',
+        context.kind === 'range' ? 'range' : 'node',
+        session
+      )
+      figma.ui.postMessage({
+        type: 'refine-complete',
+        context,
+        suggestions: result.suggestions,
+        synonyms: result.synonyms,
+      })
+    } catch (error) {
+      const errMsg = getApiErrorMessage(error, 'Refine')
+      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      figma.notify(errMsg, { error: true })
+    }
+  } else if (msg.type === 'refine-apply') {
+    try {
+      if (typeof msg.nodeId !== 'string' || !msg.nodeId.trim()) {
+        throw new Error('Missing text selection for refine apply.')
+      }
+      await applyRefineSuggestionToNode(
+        msg.nodeId,
+        typeof msg.text === 'string' ? msg.text : '',
+        msg.kind === 'range' ? 'range' : 'node',
+        typeof msg.start === 'number' ? msg.start : undefined,
+        typeof msg.end === 'number' ? msg.end : undefined
+      )
+      figma.ui.postMessage({ type: 'refine-applied' })
+      figma.notify('Applied refined copy.')
+    } catch (error) {
+      const errMsg = getApiErrorMessage(error, 'Refine apply')
+      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      figma.notify(errMsg, { error: true })
+    }
+  } else if (msg.type === 'translate') {
     try {
       await requireSarvamApiKey()
       await loadFontPrefs()
       await reloadStyleMappings()
+      const translationMode: TranslationMode = msg.translationMode === 'sarvam-translate'
+        || msg.translationMode === 'formal'
+        || msg.translationMode === 'classic-colloquial'
+        || msg.translationMode === 'modern-colloquial'
+        ? msg.translationMode
+        : 'sarvam-translate'
+      const translationConfig = getTranslationConfig(translationMode)
 
       // ── Partial text-range selection ──────────────────────────────────────
       // If the user has highlighted a strict substring inside a text layer,
       // translate only that portion and leave everything else intact.
-      const selectedRange = getActiveSelectedTextRange()
+      const selectedRange = await getActiveSelectedTextRange()
       if (selectedRange) {
         const selectedText = selectedRange.node.characters.slice(selectedRange.start, selectedRange.end)
-        assertMayuraTranslateLength(selectedText, 'Selected text')
+        assertTranslateLength(selectedText, 'Selected text', translationConfig)
         figma.ui.postMessage({ type: 'translation-started', count: 1 })
         figma.ui.postMessage({
           type: 'translation-progress', current: 1, total: 1,
@@ -2009,10 +2437,19 @@ figma.ui.onmessage = async (msg) => {
         })
         const session = createSessionCache()
         const sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
+        if (await isTextAlreadyInTargetLanguage(selectedText, msg.targetLanguage, session)) {
+          const message = getAlreadyTranslatedMessage(msg.targetLanguage)
+          figma.notify(message, { timeout: 2200 })
+          figma.ui.postMessage({
+            type: 'translation-complete', count: 0, errors: 0, total: 1,
+            weightMappings: [], errorMessages: []
+          })
+          return
+        }
         try {
           const result = await translateSelectedRange(
             selectedRange.node, selectedRange.start, selectedRange.end,
-            msg.targetLanguage, sourceLanguage, session
+            msg.targetLanguage, sourceLanguage, session, translationMode
           )
           if (!result.notified) {
             figma.ui.postMessage({
@@ -2139,10 +2576,10 @@ figma.ui.onmessage = async (msg) => {
       }
 
       const oversizedNode = textNodes.find(({ originalText, type }) => (
-        type === 'translate' && originalText.trim().length > MAYURA_TRANSLATE_MAX_CHARS
+        type === 'translate' && originalText.trim().length > translationConfig.maxChars
       ))
       if (oversizedNode) {
-        const message = getMayuraTranslateLimitMessage(getNodeLocation(oversizedNode.node), oversizedNode.originalText.trim().length)
+        const message = getTranslateLimitMessage(translationConfig, getNodeLocation(oversizedNode.node), oversizedNode.originalText.trim().length)
         figma.ui.postMessage({ type: 'error', message })
         figma.notify(message, { error: true })
         return
@@ -2160,6 +2597,8 @@ figma.ui.onmessage = async (msg) => {
       let translatedCount = 0
       let errors = 0
       let lastErrorMessage = ''
+      let alreadyTranslatedCount = 0
+      let lastAlreadyTranslatedMessage = ''
       const errorMessages: string[] = []
       let weightMappings: string[] = []
       
@@ -2234,8 +2673,14 @@ figma.ui.onmessage = async (msg) => {
             translatedCount++
             debugLog(`✅ LMA: skipped translation and font/style changes: "${originalText.substring(0, 30)}..."`)
           } else {
+            if (await isTextAlreadyInTargetLanguage(originalText, msg.targetLanguage, session)) {
+              alreadyTranslatedCount++
+              lastAlreadyTranslatedMessage = getAlreadyTranslatedMessage(msg.targetLanguage)
+              debugLog(`⏭️ Already in target language: "${originalText.substring(0, 30)}..."`)
+              continue
+            }
             const segmentResult = await translateWithStyledSegments(
-              node, msg.targetLanguage, sourceLanguage, session
+              node, msg.targetLanguage, sourceLanguage, session, translationMode
             )
             if (segmentResult.success) {
               // Only apply whole-node style mapping for uniform (single-style) nodes.
@@ -2249,7 +2694,7 @@ figma.ui.onmessage = async (msg) => {
               translatedCount++
               debugLog(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
             } else {
-              const translatedText = await translateText(originalText, msg.targetLanguage, sourceLanguage, session)
+              const translatedText = await translateText(originalText, msg.targetLanguage, sourceLanguage, session, translationMode)
               if (translatedText && translatedText.trim().length > 0) {
                 const actuallyChanged = translatedText !== originalText
                 if (actuallyChanged) {
@@ -2328,12 +2773,13 @@ figma.ui.onmessage = async (msg) => {
       
       if (translatedCount > 0) {
         figma.notify(`✅ Translated ${translatedCount}/${textNodes.length} text elements!`)
+      } else if (alreadyTranslatedCount > 0 && !lastErrorMessage) {
+        figma.notify(lastAlreadyTranslatedMessage || 'Selected text is already translated in the chosen style.', { timeout: 2200 })
       } else if (lastErrorMessage) {
         figma.notify(lastErrorMessage, { error: true })
       } else {
         figma.notify(`No changes made. Text may already be in the target language.`, { timeout: 2000 })
       }
-      
     } catch (error) {
       console.error('Translation error:', error)
       const errMsg = getApiErrorMessage(error, 'Translation')
@@ -2344,6 +2790,13 @@ figma.ui.onmessage = async (msg) => {
     try {
       await requireSarvamApiKey()
       await loadFontPrefs()
+      const translationMode: TranslationMode = msg.translationMode === 'sarvam-translate'
+        || msg.translationMode === 'formal'
+        || msg.translationMode === 'classic-colloquial'
+        || msg.translationMode === 'modern-colloquial'
+        ? msg.translationMode
+        : 'sarvam-translate'
+      const translationConfig = getTranslationConfig(translationMode)
       const validLangs = ['hi', 'ta', 'te', 'kn', 'ml', 'mr', 'bn', 'pa', 'gu']
       const bulkLangs = Array.isArray(msg.bulkLanguages) && msg.bulkLanguages.length > 0
         ? (msg.bulkLanguages as string[]).filter((l: string) => validLangs.includes(l))
@@ -2408,10 +2861,10 @@ figma.ui.onmessage = async (msg) => {
           const isLma = isLmaNode(node)
           const isHing = !isLma && isHingNode(node, root)
           const isDnd = !isLma && !isHing && isDndNode(node, root)
-          return !isLma && !isHing && !isDnd && text.trim().length > MAYURA_TRANSLATE_MAX_CHARS
+          return !isLma && !isHing && !isDnd && text.trim().length > translationConfig.maxChars
         })
         if (oversizedItem) {
-          const message = getMayuraTranslateLimitMessage(getNodeLocation(oversizedItem.node), oversizedItem.text.trim().length)
+          const message = getTranslateLimitMessage(translationConfig, getNodeLocation(oversizedItem.node), oversizedItem.text.trim().length)
           figma.ui.postMessage({ type: 'error', message })
           figma.notify(message, { error: true })
           return
@@ -2487,9 +2940,9 @@ figma.ui.onmessage = async (msg) => {
               // LMA = Leave Me Alone: preserve text and font/style exactly as-is (clone already has original; no-op)
             } else {
               await loadAllFontsForTextNode(node)
-              const segmentResult = await translateWithStyledSegments(node, targetLang, sourceLanguage, bulkSession)
+              const segmentResult = await translateWithStyledSegments(node, targetLang, sourceLanguage, bulkSession, translationMode)
               if (!segmentResult.success) {
-                const translated = await translateText(originalText, targetLang, sourceLanguage, bulkSession)
+                const translated = await translateText(originalText, targetLang, sourceLanguage, bulkSession, translationMode)
                 if (translated?.trim() && translated !== originalText) {
                   const applied = await applyUserDefinedStyleMapping(node, targetLang)
                   if (!applied) await applyFontToTextNode(node, targetLang)

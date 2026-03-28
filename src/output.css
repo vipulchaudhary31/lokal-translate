@@ -7027,6 +7027,9 @@
   .min-h-16 {
     min-height: calc(var(--spacing) * 16);
   }
+  .min-h-\[52px\] {
+    min-height: 52px;
+  }
   .min-h-\[56px\] {
     min-height: 56px;
   }
@@ -7867,6 +7870,12 @@
       border-color: color-mix(in oklab, var(--border) 50%, transparent);
     }
   }
+  .border-border\/80 {
+    border-color: var(--border);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--border) 80%, transparent);
+    }
+  }
   .border-destructive\/20 {
     border-color: var(--destructive);
     @supports (color: color-mix(in lab, red, red)) {
@@ -8584,6 +8593,10 @@
     --tw-tracking: 0.05em;
     letter-spacing: 0.05em;
   }
+  .tracking-\[0\.08em\] {
+    --tw-tracking: 0.08em;
+    letter-spacing: 0.08em;
+  }
   .tracking-\[0\.14em\] {
     --tw-tracking: 0.14em;
     letter-spacing: 0.14em;
@@ -9180,6 +9193,14 @@
     &:is(:where(.group)[data-side="right"] *) {
       border-left-style: var(--tw-border-style);
       border-left-width: 1px;
+    }
+  }
+  .group-data-\[state\=active\]\:text-background\/75 {
+    &:is(:where(.group)[data-state="active"] *) {
+      color: var(--background);
+      @supports (color: color-mix(in lab, red, red)) {
+        color: color-mix(in oklab, var(--background) 75%, transparent);
+      }
     }
   }
   .group-data-\[state\=open\]\:rotate-180 {
@@ -10494,10 +10515,20 @@
       background-color: var(--card);
     }
   }
+  .data-\[state\=active\]\:bg-foreground {
+    &[data-state="active"] {
+      background-color: var(--foreground);
+    }
+  }
   .data-\[state\=active\]\:font-bold {
     &[data-state="active"] {
       --tw-font-weight: var(--font-weight-bold);
       font-weight: var(--font-weight-bold);
+    }
+  }
+  .data-\[state\=active\]\:text-background {
+    &[data-state="active"] {
+      color: var(--background);
     }
   }
   .data-\[state\=active\]\:text-foreground {

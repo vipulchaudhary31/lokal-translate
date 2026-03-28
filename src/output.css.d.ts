@@ -224,6 +224,7 @@ declare const styles: {
   readonly "border-b-[3px]": string;
   readonly "border-border": string;
   readonly "border-border/50": string;
+  readonly "border-border/80": string;
   readonly "border-collapse": string;
   readonly "border-dashed": string;
   readonly "border-destructive/20": string;
@@ -340,11 +341,13 @@ declare const styles: {
   readonly "data-[size=sm]:h-8": string;
   readonly "data-[state=active]:bg-background": string;
   readonly "data-[state=active]:bg-card": string;
+  readonly "data-[state=active]:bg-foreground": string;
   readonly "data-[state=active]:border-2": string;
   readonly "data-[state=active]:border-foreground": string;
   readonly "data-[state=active]:font-bold": string;
   readonly "data-[state=active]:shadow-input": string;
   readonly "data-[state=active]:shadow-sm": string;
+  readonly "data-[state=active]:text-background": string;
   readonly "data-[state=active]:text-foreground": string;
   readonly "data-[state=checked]:bg-primary": string;
   readonly "data-[state=checked]:border-primary": string;
@@ -545,6 +548,7 @@ declare const styles: {
   readonly "group-data-[side=right]:border-l": string;
   readonly "group-data-[side=right]:left-0": string;
   readonly "group-data-[side=right]:rotate-180": string;
+  readonly "group-data-[state=active]:text-background/75": string;
   readonly "group-data-[state=open]:rotate-180": string;
   readonly "group-data-[variant=floating]:border": string;
   readonly "group-data-[variant=floating]:border-sidebar-border": string;
@@ -2018,6 +2022,7 @@ declare const styles: {
   readonly "min-h-0": string;
   readonly "min-h-16": string;
   readonly "min-h-4": string;
+  readonly "min-h-[52px]": string;
   readonly "min-h-[56px]": string;
   readonly "min-h-[64px]": string;
   readonly "min-h-full": string;
@@ -3175,6 +3180,7 @@ declare const styles: {
   readonly "tracking-[-0.04em]": string;
   readonly "tracking-[0.01em]": string;
   readonly "tracking-[0.05em]": string;
+  readonly "tracking-[0.08em]": string;
   readonly "tracking-[0.14em]": string;
   readonly "tracking-normal": string;
   readonly "tracking-tight": string;

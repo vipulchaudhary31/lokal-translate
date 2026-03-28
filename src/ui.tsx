@@ -7,6 +7,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
 import { Separator } from './components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import {
   Loader2,
   Info,
@@ -141,6 +142,14 @@ const DEFAULT_LANGUAGE_FONTS: Record<string, string> = {
   ml: 'Noto Sans Malayalam UI',
   en: 'Inter',
 }
+
+type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial'
+const translationModeOptions: Array<{ value: TranslationMode; label: string; description: string }> = [
+  { value: 'sarvam-translate', label: 'Sarvam', description: 'Default model with broader language support' },
+  { value: 'formal', label: 'Formal', description: 'Polished and neutral' },
+  { value: 'classic-colloquial', label: 'Classic', description: 'Natural everyday phrasing' },
+  { value: 'modern-colloquial', label: 'Modern', description: 'More current and conversational' },
+]
 
 function LanguageCardArt({
   art,
@@ -809,6 +818,7 @@ function Plugin() {
   const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(DEFAULT_BULK_LANGUAGES)
   const [bulkSetupSelection, setBulkSetupSelection] = React.useState<string[]>(DEFAULT_BULK_LANGUAGES)
   const [assumeEnglishSource, setAssumeEnglishSource] = React.useState(false)
+  const [translationMode, setTranslationMode] = React.useState<TranslationMode>('sarvam-translate')
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -818,6 +828,7 @@ function Plugin() {
   const [fontsLoading, setFontsLoading] = React.useState(false)
   const [fontPickerForLang, setFontPickerForLang] = React.useState<string | null>(null)
   const [fontSwapPicker, setFontSwapPicker] = React.useState<'target' | null>(null)
+  const [showTranslationStylePicker, setShowTranslationStylePicker] = React.useState(false)
   const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs' | 'apiKey'>('translate')
   const [apiKey, setApiKey] = React.useState('')
   const [apiKeyDraft, setApiKeyDraft] = React.useState('')
@@ -1073,6 +1084,7 @@ function Plugin() {
           setStyleMappings({})
           setSourceStyles([])
           setAssumeEnglishSource(false)
+          setTranslationMode('formal')
           setHasSeenUsageHint(false)
           setShowUsageHintModal(false)
           setPendingUsageAction(null)
@@ -1115,7 +1127,7 @@ function Plugin() {
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'translate', targetLanguage, assumeEnglish: assumeEnglishSource && targetLanguage !== 'en',
+      type: 'translate', targetLanguage, assumeEnglish: assumeEnglishSource && targetLanguage !== 'en', translationMode,
     }}, '*')
   }
 
@@ -1152,7 +1164,7 @@ function Plugin() {
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
-      type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages, assumeEnglish: assumeEnglishSource,
+      type: 'bulk-translate-all', bulkLanguages: activeBulkLanguages, assumeEnglish: assumeEnglishSource, translationMode,
     }}, '*')
   }
 
@@ -1308,19 +1320,72 @@ function Plugin() {
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
-                      <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslateRunning} onClick={handleTranslate}>
-                        {isTranslateRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
-                      </Button>
-                      <button
-                        type="button"
-                        className="flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
-                        onClick={() => setPage('fontPrefs')}
-                        aria-label="Open font preferences"
-                        title="Font preferences"
-                      >
-                        <CaseSensitive className="h-4 w-4" />
-                      </button>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslateRunning} onClick={handleTranslate}>
+                          {isTranslateRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
+                        </Button>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background shadow-xs transition-colors ${
+                            showTranslationStylePicker
+                              ? 'text-foreground bg-muted'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                          }`}
+                          onClick={() => setShowTranslationStylePicker(prev => !prev)}
+                          aria-label="Open translation style settings"
+                          title="Translation style"
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setPage('fontPrefs')}
+                          aria-label="Open font preferences"
+                          title="Font preferences"
+                        >
+                          <CaseSensitive className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {showTranslationStylePicker ? (
+                        <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                          <CardContent className="space-y-3 p-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-foreground" />
+                                <h3 className="text-sm font-semibold text-foreground">Translation Style</h3>
+                              </div>
+                            </div>
+                            <Tabs value={translationMode} onValueChange={(value) => setTranslationMode(value as TranslationMode)}>
+                              <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0">
+                                {translationModeOptions.map(option => (
+                                  <TabsTrigger
+                                    key={option.value}
+                                    value={option.value}
+                                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background"
+                                  >
+                                    {option.label}
+                                  </TabsTrigger>
+                                ))}
+                              </TabsList>
+                              {translationModeOptions.map(option => (
+                                <TabsContent key={option.value} value={option.value} className="mt-2">
+                                  <p className="rounded-md border border-dashed border-border/80 bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                                    {option.value === 'sarvam-translate'
+                                      ? 'Uses sarvam-translate:v1 with formal output, wider language coverage, and a longer 2000-character request limit.'
+                                      : option.value === 'formal'
+                                      ? 'Best for polished UI copy, structured product text, and crisp labels.'
+                                      : option.value === 'classic-colloquial'
+                                        ? 'Best when you want more natural everyday phrasing without feeling too casual.'
+                                        : 'Best when you want the output to feel current, light, and conversational.'}
+                                  </p>
+                                </TabsContent>
+                              ))}
+                            </Tabs>
+                          </CardContent>
+                        </Card>
+                      ) : null}
                     </div>
 
                     <div>
