@@ -9,6 +9,9 @@ export default function () {
 const DEBUG_LOGS = false
 const debugLog: (...args: unknown[]) => void = DEBUG_LOGS ? console.log.bind(console) : () => {}
 const debugWarn: (...args: unknown[]) => void = DEBUG_LOGS ? console.warn.bind(console) : () => {}
+const REFINE_DEBUG = true
+const refineLog: (...args: unknown[]) => void = REFINE_DEBUG ? console.log.bind(console, '[REFINE DEBUG]') : () => {}
+const refineWarn: (...args: unknown[]) => void = REFINE_DEBUG ? console.warn.bind(console, '[REFINE DEBUG]') : () => {}
 
 // Sarvam AI API configuration
 const SARVAM_API_KEY_STORAGE_KEY = 'ai-translate-sarvam-api-key'
@@ -16,10 +19,12 @@ const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
 const SARVAM_CHAT_COMPLETIONS_URL = 'https://api.sarvam.ai/v1/chat/completions'
+const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+const GEMINI_API_KEY = 'AIzaSyAE4FZQ436xnOtLeKnGwqJGgDeFeIYFlmA'
 const MAYURA_TRANSLATE_MAX_CHARS = 1000
 const SARVAM_TRANSLATE_MAX_CHARS = 2000
 const REFINE_MAX_CHARS = 2000
-const REFINE_MODEL = 'sarvam-30b-16k'
+const REFINE_MODEL = 'gemini-2.5-flash'
 
 // Language mapping for Sarvam API
 const LANGUAGE_CODES: Record<string, string> = {
@@ -42,11 +47,25 @@ type TranslationRequestConfig = {
   mode: ApiTranslationMode
   maxChars: number
   modelLabel: string
+  outputScript?: 'spoken-form-in-native' | 'fully-native'
+}
+const TRANSLATION_MEMORY_KEY = 'lokal-translation-memory-v1'
+type StoredTranslationEntry = {
+  sourceText: string
+  translatedText: string
+  sourceLanguage: string
+  targetLanguage: string
+  mode: TranslationMode
+}
+type StoredTranslationMemory = {
+  node?: StoredTranslationEntry
+  range?: StoredTranslationEntry
 }
 type RefineSelectionContext = {
   canRefine: boolean
   kind: 'node' | 'range' | 'invalid'
   text: string
+  layerText?: string
   charCount: number
   nodeId?: string
   nodeName?: string
@@ -59,10 +78,38 @@ type RefineSuggestion = {
   text: string
   note?: string
 }
-type RefineResponse = {
-  suggestions: RefineSuggestion[]
-  synonyms: string[]
+type RefineConversationTurn = {
+  role: 'user' | 'assistant'
+  content: string
 }
+type RefineVariant = {
+  label: string
+  instruction: string
+  note?: string
+}
+
+const BASE_REFINE_VARIANTS: RefineVariant[] = [
+  {
+    label: 'Sarvam',
+    instruction: 'Rewrite this text in a neutral default style. Keep the meaning intact and keep it UI-friendly.',
+    note: 'Default model with broader language support',
+  },
+  {
+    label: 'Formal',
+    instruction: 'Rewrite this text in a polished, structured, formal style. Keep the meaning intact and keep it UI-friendly.',
+    note: 'Polished and neutral',
+  },
+  {
+    label: 'Classic',
+    instruction: 'Rewrite this text in natural everyday phrasing. Keep the meaning intact and keep it UI-friendly.',
+    note: 'Natural everyday phrasing',
+  },
+  {
+    label: 'Modern',
+    instruction: 'Rewrite this text in a current, conversational style. Keep the meaning intact and keep it UI-friendly.',
+    note: 'More current and conversational',
+  },
+]
 
 // Any node with children can contain text - support frames, groups, sections, components, instances,
 // component sets, boolean ops, slides, etc. Works for whatever the user selects.
@@ -102,6 +149,13 @@ class TranslationLengthError extends Error {
   }
 }
 
+class TranslationRestyleError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TranslationRestyleError'
+  }
+}
+
 function getTranslationConfig(mode: TranslationMode): TranslationRequestConfig {
   if (mode === 'sarvam-translate') {
     return {
@@ -117,6 +171,9 @@ function getTranslationConfig(mode: TranslationMode): TranslationRequestConfig {
     mode,
     maxChars: MAYURA_TRANSLATE_MAX_CHARS,
     modelLabel: 'Mayura',
+    outputScript: mode === 'classic-colloquial' || mode === 'modern-colloquial'
+      ? 'fully-native'
+      : undefined,
   }
 }
 
@@ -137,6 +194,99 @@ function getAlreadyTranslatedMessage(targetLanguage: string): string {
   return `Selected text is already in ${targetLabel}.`
 }
 
+function getTranslationStyleLabel(mode: TranslationMode): string {
+  if (mode === 'sarvam-translate') return 'Sarvam'
+  if (mode === 'formal') return 'Formal'
+  if (mode === 'classic-colloquial') return 'Classic'
+  return 'Modern'
+}
+
+function readTranslationMemory(node: TextNode): StoredTranslationMemory {
+  try {
+    const raw = node.getPluginData(TRANSLATION_MEMORY_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as StoredTranslationMemory
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeTranslationMemory(node: TextNode, memory: StoredTranslationMemory): void {
+  try {
+    node.setPluginData(TRANSLATION_MEMORY_KEY, JSON.stringify(memory))
+  } catch {
+    // Ignore plugin data write failures.
+  }
+}
+
+function storeNodeTranslationMemory(node: TextNode, entry: StoredTranslationEntry): void {
+  const memory = readTranslationMemory(node)
+  memory.node = entry
+  writeTranslationMemory(node, memory)
+}
+
+function storeRangeTranslationMemory(node: TextNode, entry: StoredTranslationEntry): void {
+  const memory = readTranslationMemory(node)
+  memory.range = entry
+  writeTranslationMemory(node, memory)
+}
+
+async function resolveActualSourceLanguage(
+  text: string,
+  sourceLanguage: string | undefined,
+  session?: SessionCache
+): Promise<string> {
+  if (sourceLanguage === 'en') return 'en'
+  return await detectLanguage(text, session)
+}
+
+function resolveRestyleTranslation(
+  node: TextNode,
+  kind: 'node' | 'range',
+  currentText: string,
+  targetLanguage: string,
+  mode: TranslationMode
+): {
+  status: 'restyle' | 'already' | 'missing'
+  sourceText?: string
+  sourceLanguage?: string
+  message: string
+} {
+  const memory = readTranslationMemory(node)
+  const entry = kind === 'range' ? memory.range : memory.node
+  const targetLabel = BULK_LANGUAGE_LABELS[targetLanguage] || (targetLanguage === 'en' ? 'English' : targetLanguage)
+  const styleLabel = getTranslationStyleLabel(mode)
+
+  if (!entry || entry.targetLanguage !== targetLanguage) {
+    return {
+      status: 'missing',
+      message: `Selected text is already in ${targetLabel}, but its original source wasn't saved. Re-translate from the original source first before swapping styles.`,
+    }
+  }
+
+  if (normalizeTextForCache(entry.translatedText) !== normalizeTextForCache(currentText)) {
+    return {
+      status: 'missing',
+      message: `Selected text changed after translation, so Lokal Translate can't safely swap styles for it. Re-translate from the original source first.`,
+    }
+  }
+
+  if (entry.mode === mode) {
+    return {
+      status: 'already',
+      message: `Selected text is already in ${targetLabel} with the ${styleLabel} style.`,
+    }
+  }
+
+  return {
+    status: 'restyle',
+    sourceText: entry.sourceText,
+    sourceLanguage: entry.sourceLanguage,
+    message: '',
+  }
+}
+
 function assertRefineLength(text: string, subject: string): string {
   const cleanText = text.trim()
   if (cleanText.length > REFINE_MAX_CHARS) {
@@ -145,78 +295,304 @@ function assertRefineLength(text: string, subject: string): string {
   return cleanText
 }
 
-function getRefineIntentInstruction(intent: string): string {
-  switch (intent) {
-    case 'shorter':
-      return 'Make the copy shorter and tighter while preserving the meaning.'
-    case 'stronger-cta':
-      return 'Generate stronger, clearer CTA-style rewrites with more action and urgency.'
-    case 'softer':
-      return 'Make the copy softer, friendlier, and less forceful.'
-    case 'premium':
-      return 'Make the copy feel more premium, polished, and elevated.'
-    case 'local':
-      return 'Make the copy feel more natural, local, and idiomatic for everyday usage.'
-    default:
-      return 'Generate strong alternative phrasings that preserve the original meaning.'
-  }
-}
-
 function sanitizeRefineText(text: string): string {
   return text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[`]/g, ' ')
+    .replace(/^(final answer|answer|rewrite|rewritten text)\s*:\s*/i, '')
     .replace(/^[-*•\d.)\s]+/, '')
     .replace(/^["“”']+|["“”']+$/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
-function extractJsonObject(text: string): string | null {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
-  return text.slice(start, end + 1)
-}
-
-function normalizeRefineResponse(raw: unknown): RefineResponse {
-  const obj = raw && typeof raw === 'object' ? raw as { suggestions?: unknown; synonyms?: unknown } : {}
-  const suggestions = Array.isArray(obj.suggestions)
-    ? obj.suggestions
-        .map((item, index) => {
-          const entry = item && typeof item === 'object' ? item as { label?: unknown; text?: unknown; note?: unknown } : {}
-          const text = typeof entry.text === 'string' ? sanitizeRefineText(entry.text) : ''
-          if (!text) return null
-          return {
-            label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : `Option ${index + 1}`,
-            text,
-            note: typeof entry.note === 'string' && entry.note.trim() ? entry.note.trim() : undefined,
-          } satisfies RefineSuggestion
-        })
-        .filter((item): item is RefineSuggestion => item !== null)
-    : []
-
-  const dedupedSuggestions = suggestions.filter((item, index, list) =>
-    list.findIndex(candidate => candidate.text === item.text) === index
-  ).slice(0, 5)
-
-  const synonyms = Array.isArray(obj.synonyms)
-    ? obj.synonyms
-        .map(item => typeof item === 'string' ? sanitizeRefineText(item) : '')
-        .filter(Boolean)
-        .filter((item, index, list) => list.indexOf(item) === index)
-        .slice(0, 6)
-    : []
-
-  return { suggestions: dedupedSuggestions, synonyms }
-}
-
-function fallbackRefineResponse(content: string): RefineResponse {
-  const suggestions = content
+function getRefineCandidateLines(content: string): string[] {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/gi, '')
     .split('\n')
     .map(line => sanitizeRefineText(line))
     .filter(Boolean)
-    .filter(line => line.length > 2)
-    .slice(0, 4)
-    .map((text, index) => ({ label: `Option ${index + 1}`, text }))
-  return { suggestions, synonyms: [] }
+    .filter(line => !/^(```|json\b)/i.test(line))
+    .filter(line => !/^(here('|’)s|sure[,!]?|okay[,!]?|i('|’)ll|let('|’)s|the user|return only|instruction|selection kind|source text|text:|task:|requirements?:|reply with only|one line only|final answer only|do not )/i.test(line))
+}
+
+function readChatMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (Array.isArray(content)) {
+    return content
+      .map(item => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          if ('text' in item && typeof (item as { text?: unknown }).text === 'string') {
+            return (item as { text: string }).text
+          }
+          if ('content' in item && typeof (item as { content?: unknown }).content === 'string') {
+            return (item as { content: string }).content
+          }
+        }
+        return ''
+      })
+      .join('\n')
+      .trim()
+  }
+  if (content && typeof content === 'object') {
+    if ('text' in content && typeof (content as { text?: unknown }).text === 'string') {
+      return (content as { text: string }).text.trim()
+    }
+    if ('content' in content) {
+      return readChatMessageContent((content as { content?: unknown }).content)
+    }
+  }
+  return ''
+}
+
+function readChatMessageText(message: unknown): string {
+  if (typeof message === 'string') return message.trim()
+  if (!message || typeof message !== 'object') return ''
+  const direct = readChatMessageContent((message as { content?: unknown }).content)
+  if (direct) return direct
+  const outputText = readChatMessageContent((message as { output_text?: unknown }).output_text)
+  if (outputText) return outputText
+  return ''
+}
+
+function extractTextCandidatesDeep(value: unknown, path: string[] = []): string[] {
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text) return []
+    const pathKey = path.join('.').toLowerCase()
+    if (/(^|\.)(id|object|model|role|finish_reason|created|index|usage|prompt_tokens|completion_tokens|total_tokens)$/.test(pathKey)) {
+      return []
+    }
+    return [text]
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => extractTextCandidatesDeep(item, [...path, String(index)]))
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .flatMap(([key, child]) => extractTextCandidatesDeep(child, [...path, key]))
+  }
+
+  return []
+}
+
+function extractBestTextFromResponsePayload(payload: unknown): string {
+  const candidates = Array.from(new Set(extractTextCandidatesDeep(payload)))
+    .map(text => text.trim())
+    .filter(Boolean)
+    .filter(text => text.length <= 2000)
+    .filter(text => !/^\{.*\}$/.test(text))
+
+  const ranked = candidates.sort((a, b) => {
+    const score = (input: string): number => {
+      let value = 0
+      if (input.length >= 2 && input.length <= 400) value += 8
+      if (/\n/.test(input)) value += 3
+      if (/[A-Za-z\u0900-\u0D7F]/.test(input)) value += 6
+      if (/(selected text|instruction|analysis|reasoning|prompt_tokens|completion_tokens|finish_reason)/i.test(input)) value -= 10
+      return value
+    }
+    return score(b) - score(a)
+  })
+
+  return ranked[0] || ''
+}
+
+function sanitizeRefineAnswer(content: string): string {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<think>[\s\S]*$/gi, ' ')
+    .replace(/```[a-z0-9_-]*\n?/gi, '')
+    .replace(/```/g, '')
+    .trim()
+}
+
+function readGeminiPartText(part: unknown): string {
+  if (!part || typeof part !== 'object') return ''
+  if ('text' in part && typeof (part as { text?: unknown }).text === 'string') {
+    return (part as { text: string }).text
+  }
+  return ''
+}
+
+function readGeminiContentText(content: unknown): string {
+  if (!content || typeof content !== 'object') return ''
+  if ('parts' in content && Array.isArray((content as { parts?: unknown[] }).parts)) {
+    return ((content as { parts: unknown[] }).parts || [])
+      .map(readGeminiPartText)
+      .join('')
+      .trim()
+  }
+  return ''
+}
+
+function readGeminiResponseText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return ''
+  const candidates = (payload as { candidates?: Array<{ content?: unknown }> }).candidates
+  if (!Array.isArray(candidates)) return ''
+  for (const candidate of candidates) {
+    const text = readGeminiContentText(candidate?.content)
+    if (text) return text
+  }
+  return ''
+}
+
+function cleanRefineCompletion(content: string): string {
+  const directFinalMatch = content.match(/<final>([\s\S]*?)<\/final>/i)?.[1]
+  if (directFinalMatch) {
+    return sanitizeRefineText(directFinalMatch)
+  }
+
+  const quotedMatch = content.match(/["“”']([^"“”']{2,160})["“”']/)
+  if (quotedMatch) {
+    const quoted = sanitizeRefineText(quotedMatch[1])
+    if (quoted) return quoted
+  }
+
+  const lines = getRefineCandidateLines(content)
+  if (lines.length === 0) return ''
+
+  const nonMetaLines = lines
+    .map(line => line.replace(/^(sarvam|formal|classic|modern|custom)\s*:\s*/i, '').trim())
+    .filter(Boolean)
+
+  if (nonMetaLines.length === 0) return ''
+
+  const scoreLine = (line: string): number => {
+    let score = 0
+    const clean = sanitizeRefineText(line)
+    if (!clean) return -1000
+    if (/[\u0900-\u0D7F]/.test(clean)) score += 6
+    if (/[A-Za-z]/.test(clean)) score += 3
+    if (/^(do not|return only|reply with only|instruction|task|source text|selection kind)/i.test(clean)) score -= 20
+    if (/(json|tags?|figma|ui copy|selection|source text|instruction|reply with only|one line only|final answer only)/i.test(clean)) score -= 12
+    if (clean.length >= 2 && clean.length <= 40) score += 8
+    if (clean.length > 40 && clean.length <= 90) score += 3
+    if (clean.length > 120) score -= 8
+    if (/^[\W_]+$/.test(clean)) score -= 25
+    return score
+  }
+
+  const ranked = [...nonMetaLines].sort((a, b) => scoreLine(b) - scoreLine(a))
+  return sanitizeRefineText(ranked[0])
+}
+
+function extractRefineCompletions(content: string, sourceText: string): string[] {
+  const directFinalMatch = content.match(/<final>([\s\S]*?)<\/final>/i)?.[1]
+  if (directFinalMatch) {
+    const candidate = sanitizeRefineText(directFinalMatch)
+    return isValidRefineCompletion(candidate, sourceText) ? [candidate] : []
+  }
+
+  const lines = getRefineCandidateLines(content)
+    .map(line => line.replace(/^(sarvam|formal|classic|modern|custom)\s*:\s*/i, '').trim())
+    .map(sanitizeRefineText)
+    .filter(Boolean)
+
+  const unique: string[] = []
+  for (const line of lines) {
+    if (!isValidRefineCompletion(line, sourceText)) continue
+    if (unique.some(existing => normalizeTextForCache(existing) === normalizeTextForCache(line))) continue
+    unique.push(line)
+  }
+
+  if (unique.length > 0) return unique
+
+  const fallback = cleanRefineCompletion(content)
+  return isValidRefineCompletion(fallback, sourceText) ? [fallback] : []
+}
+
+function isValidRefineCompletion(text: string, sourceText: string): boolean {
+  const clean = sanitizeRefineText(text)
+  if (!clean) return false
+  if (clean.length > Math.max(sourceText.length * 8, 48)) return false
+  if (/<think>|<\/think>|^\{|\}$/.test(clean)) return false
+  if (/^(okay|sure|i('|’)ll|let('|’)s|the user|return only|json)/i.test(clean)) return false
+  if (/generate json suggestions|source text|instruction:/i.test(clean)) return false
+  return true
+}
+
+function getRequestedRefineScriptLanguage(prompt: string): string | null {
+  const lower = prompt.toLowerCase()
+  if (/\b(english|roman|latin)\s+script\b/.test(lower)) return 'en'
+  if (/\bdevanagari\b/.test(lower) || /\bhindi\s+script\b/.test(lower)) return 'hi'
+  if (/\bmarathi\s+script\b/.test(lower)) return 'mr'
+  if (/\bbengali\s+script\b/.test(lower)) return 'bn'
+  if (/\bpunjabi\s+script\b/.test(lower) || /\bgurmukhi\b/.test(lower)) return 'pa'
+  if (/\bgujarati\s+script\b/.test(lower)) return 'gu'
+  if (/\btamil\s+script\b/.test(lower)) return 'ta'
+  if (/\btelugu\s+script\b/.test(lower)) return 'te'
+  if (/\bkannada\s+script\b/.test(lower)) return 'kn'
+  if (/\bmalayalam\s+script\b/.test(lower)) return 'ml'
+  return null
+}
+
+function scoreCustomRefineCandidate(candidate: string, prompt: string): number {
+  const clean = sanitizeRefineText(candidate)
+  if (!clean) return -1000
+
+  let score = 0
+  const lower = clean.toLowerCase()
+  const promptLower = prompt.toLowerCase()
+
+  if (clean.length >= 2 && clean.length <= 24) score += 6
+  else if (clean.length <= 48) score += 3
+  else score -= 4
+
+  if (/^(analyze|synthesize|find|the core task|the target|user('|’)s request|request|task)/i.test(clean)) score -= 30
+  if (/(user('|’)s request|selected text|equivalent|language\/script|instruction|analyze|synthesize)/i.test(clean)) score -= 25
+  if (/^[\W_]+$/.test(clean)) score -= 20
+
+  const quotedTarget = prompt.match(/["“”']([^"“”']{2,40})["“”']/)?.[1]?.toLowerCase()
+  if (quotedTarget && lower.includes(quotedTarget)) score += 12
+
+  const requestedScript = getRequestedRefineScriptLanguage(prompt)
+  if (requestedScript === 'en') {
+    if (!isInIndicScript(clean)) score += 8
+    else score -= 8
+  } else if (requestedScript) {
+    if (isInIndicScript(clean)) score += 6
+    else score -= 4
+  }
+
+  if (/\bscript\b/.test(promptLower) && /\b(personal|private)\b/i.test(clean)) score += 4
+  return score
+}
+
+async function finalizeCustomRefineText(
+  candidates: string[],
+  prompt: string,
+  session?: SessionCache
+): Promise<string> {
+  const ranked = [...candidates].sort((a, b) => scoreCustomRefineCandidate(b, prompt) - scoreCustomRefineCandidate(a, prompt))
+  let best = sanitizeRefineText(ranked[0] || '')
+  if (!best) return ''
+
+  const requestedScript = getRequestedRefineScriptLanguage(prompt)
+  if (!requestedScript) return best
+
+  if (requestedScript === 'en') {
+    if (isInIndicScript(best)) {
+      const sourceLanguage = await detectLanguage(best, session)
+      best = await transliterateText(best, sourceLanguage || 'hi', 'en', session)
+    }
+    return sanitizeRefineText(best)
+  }
+
+  if (!isInIndicScript(best)) {
+    best = await transliterateText(best, 'en', requestedScript, session)
+    return sanitizeRefineText(best)
+  }
+
+  const detectedLanguage = await detectLanguage(best, session)
+  if (detectedLanguage !== requestedScript) {
+    best = await transliterateText(best, detectedLanguage || 'hi', requestedScript, session)
+  }
+  return sanitizeRefineText(best)
 }
 
 async function isTextAlreadyInTargetLanguage(
@@ -418,6 +794,12 @@ async function saveSarvamApiKey(apiKey: string): Promise<string> {
 async function requireSarvamApiKey(): Promise<string> {
   const apiKey = await loadSarvamApiKey()
   if (!apiKey) throw new Error('Please add your Sarvam API key to use this plugin.')
+  return apiKey
+}
+
+async function requireGeminiApiKey(): Promise<string> {
+  const apiKey = GEMINI_API_KEY.trim()
+  if (!apiKey) throw new Error('Please add your Gemini API key to use Refine.')
   return apiKey
 }
 
@@ -913,9 +1295,14 @@ async function translateWithStyledSegments(
   const targetLang = targetLanguage
   const translatedParts: string[] = []
   for (const seg of segments) {
-    const t = seg.characters.trim().length > 0
-      ? await translateText(seg.characters, targetLang, sourceLanguage, session, mode)
-      : seg.characters
+    const match = seg.characters.match(/^(\s*)([\s\S]*?)(\s*)$/)
+    const leadingWhitespace = match?.[1] || ''
+    const coreText = match?.[2] || ''
+    const trailingWhitespace = match?.[3] || ''
+    const translatedCore = coreText.trim().length > 0
+      ? await translateText(coreText, targetLang, sourceLanguage, session, mode)
+      : coreText
+    const t = `${leadingWhitespace}${translatedCore}${trailingWhitespace}`
     if (!t) return { success: false, weightMappings: [], wasMixed }
     translatedParts.push(t)
   }
@@ -1046,7 +1433,7 @@ function cleanupTranslation(translation: string): string {
 // Session cache for current run (avoids redundant API/storage calls for repeated texts)
 const RATE_LIMIT_MS = 50
 type SessionCache = {
-  lid: Map<string, string>; tr: Map<string, string>; tl: Map<string, string>; rf: Map<string, RefineResponse>;
+  lid: Map<string, string>; tr: Map<string, string>; tl: Map<string, string>; rf: Map<string, RefineSuggestion[]>;
   lastApiTime?: number;
 }
 function createSessionCache(): SessionCache {
@@ -1167,6 +1554,7 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
       canRefine: true,
       kind: 'range',
       text: selectedText,
+      layerText: selectedRange.node.characters,
       charCount: cleanText.length,
       nodeId: selectedRange.node.id,
       nodeName: selectedRange.node.name || 'Text',
@@ -1202,77 +1590,298 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
     canRefine: true,
     kind: 'node',
     text: node.characters,
+    layerText: node.characters,
     charCount: cleanText.length,
     nodeId: node.id,
     nodeName: node.name || 'Text',
   }
 }
 
-async function generateRefineOptions(
+async function requestRefineSuggestion(
+  apiKey: string,
   text: string,
-  intent: string,
-  customPrompt: string,
+  kind: 'node' | 'range',
+  variant: RefineVariant,
+  preserveScript = true,
+  session?: SessionCache
+): Promise<RefineSuggestion | null> {
+  const normalizedText = normalizeTextForCache(text)
+  const normalizedInstruction = normalizeTextForCache(variant.instruction)
+  const cacheId = cacheKey('rfv4', REFINE_MODEL, variant.label, preserveScript ? 'preserve' : 'flex', normalizedInstruction, normalizedText)
+  const sessionKey = `${REFINE_MODEL}|${variant.label}|${preserveScript ? 'preserve' : 'flex'}|${normalizedInstruction}|${normalizedText}`
+
+  if (session?.rf) {
+    const hit = session.rf.get(sessionKey)
+    if (hit?.[0]) {
+      refineLog('session cache hit', {
+        label: variant.label,
+        kind,
+        preserveScript,
+        text: text.slice(0, 80),
+        result: hit[0].text,
+      })
+      return hit[0]
+    }
+  }
+
+  const cached = await getCached<RefineSuggestion[]>(cacheId)
+  if (cached?.[0]) {
+    session?.rf?.set(sessionKey, cached)
+    refineLog('storage cache hit', {
+      label: variant.label,
+      kind,
+      preserveScript,
+      text: text.slice(0, 80),
+      result: cached[0].text,
+    })
+    return cached[0]
+  }
+
+  const runRequest = async (extraStrict: boolean, simplifiedPrompt: boolean): Promise<string> => {
+    const requestBody = {
+      model: REFINE_MODEL,
+      temperature: 0.2,
+      top_p: 1,
+      max_tokens: 120,
+      n: 1,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'You rewrite UX copy for Figma text layers.',
+            'Return exactly one rewritten option.',
+            'Do not explain.',
+            'Do not add labels.',
+            'Do not output JSON.',
+            'Do not output <think> tags.',
+            'Do not mention the instruction.',
+            'Do not include quotes.',
+            preserveScript
+              ? 'Keep the output in the same language and script as the source text.'
+              : 'Keep the output in the same language as the source text unless the instruction explicitly asks for a different language or script.',
+            extraStrict ? 'One line only. Final answer only. No preamble.' : '',
+          ].join(' '),
+        },
+        {
+          role: 'user',
+          content: simplifiedPrompt
+            ? [
+                `Selection kind: ${kind}.`,
+                `Selected text: ${text}`,
+                `Task: ${variant.instruction}`,
+                'Reply with only the rewritten text.',
+              ].join('\n')
+            : [
+                `Selection kind: ${kind}.`,
+                `Selected text: ${text}`,
+                `Task: ${variant.instruction}`,
+                'Reply with only the rewritten text.',
+              ].join('\n'),
+        },
+      ],
+    }
+
+    refineLog('request', {
+      label: variant.label,
+      kind,
+      preserveScript,
+      extraStrict,
+      simplifiedPrompt,
+      model: REFINE_MODEL,
+      text,
+      instruction: variant.instruction,
+    })
+
+    await rateLimitBeforeApiCall(session)
+    const response = await fetchWithTimeout(SARVAM_CHAT_COMPLETIONS_URL, {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    const responseText = await response.text()
+    refineLog('response', {
+      label: variant.label,
+      status: response.status,
+      ok: response.ok,
+      body: responseText,
+    })
+    if (!response.ok) {
+      const errMsg = parseSarvamErrorBody(responseText, response.status)
+      throw new Error(errMsg)
+    }
+
+    const data = JSON.parse(responseText) as {
+      choices?: Array<{ message?: { content?: unknown; reasoning_content?: unknown; output_text?: unknown } }>
+    }
+    refineLog('parsed choice', {
+      label: variant.label,
+      message: data.choices?.[0]?.message,
+    })
+    return readChatMessageText(data.choices?.[0]?.message)
+  }
+
+  let cleaned = cleanRefineCompletion(await runRequest(false, false))
+  refineLog('cleaned attempt 1', { label: variant.label, cleaned, valid: isValidRefineCompletion(cleaned, text) })
+  if (!isValidRefineCompletion(cleaned, text)) {
+    cleaned = cleanRefineCompletion(await runRequest(true, false))
+    refineLog('cleaned attempt 2', { label: variant.label, cleaned, valid: isValidRefineCompletion(cleaned, text) })
+  }
+  if (!isValidRefineCompletion(cleaned, text)) {
+    cleaned = cleanRefineCompletion(await runRequest(true, true))
+    refineLog('cleaned attempt 3', { label: variant.label, cleaned, valid: isValidRefineCompletion(cleaned, text) })
+  }
+  if (!isValidRefineCompletion(cleaned, text)) {
+    refineWarn('invalid refine response after all attempts', {
+      label: variant.label,
+      kind,
+      sourceText: text,
+      instruction: variant.instruction,
+    })
+    return null
+  }
+
+  const suggestion: RefineSuggestion = {
+    label: variant.label,
+    text: cleaned,
+    note: variant.note,
+  }
+  session?.rf?.set(sessionKey, [suggestion])
+  await setCached(cacheId, [suggestion])
+  await trimCacheIfNeeded()
+  return suggestion
+}
+
+async function generateBaseRefineSuggestions(
+  text: string,
   kind: 'node' | 'range',
   session?: SessionCache
-): Promise<RefineResponse> {
+): Promise<RefineSuggestion[]> {
   const apiKey = await requireSarvamApiKey()
   const cleanText = assertRefineLength(text, 'Selected text')
-  const normalizedIntent = normalizeTextForCache(intent || 'alternatives')
-  const normalizedPrompt = normalizeTextForCache(customPrompt || '')
   const normalizedText = normalizeTextForCache(cleanText)
-  const key = cacheKey('rf', REFINE_MODEL, normalizedIntent, normalizedPrompt || '-', normalizedText)
-  const sessionKey = `${REFINE_MODEL}|${normalizedIntent}|${normalizedPrompt}|${normalizedText}`
+  const key = cacheKey('rf-base-v4', REFINE_MODEL, normalizedText)
+  const sessionKey = `${REFINE_MODEL}|base|${normalizedText}`
 
   if (session?.rf) {
     const hit = session.rf.get(sessionKey)
     if (hit) return hit
   }
 
-  const cached = await getCached<RefineResponse>(key)
+  const cached = await getCached<RefineSuggestion[]>(key)
   if (cached != null) {
     session?.rf?.set(sessionKey, cached)
     return cached
   }
 
-  const requestBody = {
-    model: REFINE_MODEL,
-    temperature: 0.35,
-    top_p: 1,
-    max_tokens: 700,
-    n: 1,
-    messages: [
-      {
-        role: 'system',
-        content: [
-          'You are a multilingual UX copy refiner for Figma text layers.',
-          'Return strict JSON only.',
-          'Output shape: {"suggestions":[{"label":"...","text":"...","note":"..."}],"synonyms":["..."]}.',
-          'Generate 4 suggestion objects.',
-          'Keep the output in the same language and script as the source text unless the custom instruction explicitly asks for another language or script.',
-          'Preserve the core meaning unless the custom instruction says otherwise.',
-          'If the source text is short UI copy like a CTA, label, tab, or headline, keep suggestions short and UI-friendly.',
-          'Use distinct angles across the suggestions.',
-          'synonyms should contain 0 to 6 short near-equivalent words or phrases when meaningful. Otherwise return an empty list.',
-          'Do not include markdown, code fences, numbering, or commentary outside JSON.',
-        ].join(' '),
-      },
-      {
-        role: 'user',
-        content: [
-          `Selection kind: ${kind}.`,
-          `Refinement goal: ${getRefineIntentInstruction(intent)}.`,
-          `Custom instruction: ${customPrompt.trim() || 'None.'}`,
-          `Source text: """${cleanText}"""`,
-        ].join('\n'),
-      },
-    ],
+  const suggestions: RefineSuggestion[] = []
+  for (const variant of BASE_REFINE_VARIANTS) {
+    const suggestion = await requestRefineSuggestion(apiKey, cleanText, kind, variant, true, session)
+    if (suggestion) suggestions.push(suggestion)
   }
 
+  const deduped = suggestions.filter((item, index, list) =>
+    list.findIndex(candidate => candidate.label === item.label) === index
+  )
+  if (deduped.length === 0) {
+    throw new Error('Could not generate refine options right now. Please try again.')
+  }
+
+  session?.rf?.set(sessionKey, deduped)
+  await setCached(key, deduped)
+  await trimCacheIfNeeded()
+  return deduped
+}
+
+async function generateCustomRefineAnswer(
+  text: string,
+  customPrompt: string,
+  kind: 'node' | 'range',
+  history: RefineConversationTurn[] = [],
+  fullLayerText?: string,
+  session?: SessionCache
+): Promise<string> {
+  const apiKey = await requireGeminiApiKey()
+  const cleanText = assertRefineLength(text, 'Selected text')
+  const normalizedPrompt = normalizeTextForCache(customPrompt || '')
+  if (!normalizedPrompt) return ''
+  const sanitizedHistory = history
+    .filter(turn => turn && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string')
+    .map(turn => ({
+      role: turn.role,
+      content: turn.content.trim(),
+    }))
+    .filter(turn => turn.content.length > 0)
+    .slice(-6)
+
+  refineLog('generate custom refine', {
+    kind,
+    text: cleanText,
+    prompt: customPrompt,
+    history: sanitizedHistory,
+  })
+
+  const requestBody = {
+    system_instruction: {
+      parts: [
+        {
+          text: [
+            'You are Lokal Refine, a chatbot-style writing assistant inside a Figma plugin.',
+            'Use the full parent layer text as supporting context.',
+            'If the current selection is a highlighted range, give special attention to that selection while still considering the full layer.',
+            'Reply like a normal helpful chatbot in English.',
+            'Keep the explanation in English even when the selected text is in another language.',
+            'Only the literal suggested word, phrase, or script example should appear in the requested target language or script when needed.',
+            'When useful, explain your reasoning briefly and give a best recommendation.',
+            'Do not output hidden reasoning tags or XML wrappers.',
+          ].join(' '),
+        },
+      ],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: [
+              `Current selection type: ${kind === 'range' ? 'highlighted text inside a layer' : 'full text layer'}.`,
+              `Full parent layer text:\n${(fullLayerText || cleanText).trim()}`,
+              `Current focus text:\n${cleanText}`,
+            ].join('\n\n'),
+          },
+        ],
+      },
+      ...sanitizedHistory.map(turn => ({
+        role: turn.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: turn.content }],
+      })),
+      {
+        role: 'user',
+        parts: [{ text: customPrompt.trim() }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.95,
+      maxOutputTokens: 800,
+    },
+  }
+
+  refineLog('custom request', {
+    kind,
+    model: REFINE_MODEL,
+    text: cleanText,
+    prompt: customPrompt,
+  })
+
   await rateLimitBeforeApiCall(session)
-  const response = await fetchWithTimeout(SARVAM_CHAT_COMPLETIONS_URL, {
+  const response = await fetchWithTimeout(`${GEMINI_GENERATE_CONTENT_URL}?key=${encodeURIComponent(apiKey)}`, {
     method: 'POST',
     headers: {
-      'api-subscription-key': apiKey,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
@@ -1280,36 +1889,26 @@ async function generateRefineOptions(
   })
 
   const responseText = await response.text()
+  refineLog('custom response', {
+    status: response.status,
+    ok: response.ok,
+    body: responseText,
+  })
   if (!response.ok) {
-    const errMsg = parseSarvamErrorBody(responseText, response.status)
+    const errMsg = parseGeminiErrorBody(responseText, response.status)
     throw new Error(errMsg)
   }
 
   const data = JSON.parse(responseText) as {
-    choices?: Array<{ message?: { content?: string } }>
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
   }
-  const content = data.choices?.[0]?.message?.content?.trim() || ''
-  const parsed = (() => {
-    if (!content) return { suggestions: [], synonyms: [] } satisfies RefineResponse
-    const jsonBlock = extractJsonObject(content)
-    if (jsonBlock) {
-      try {
-        return normalizeRefineResponse(JSON.parse(jsonBlock))
-      } catch {
-        return fallbackRefineResponse(content)
-      }
-    }
-    return fallbackRefineResponse(content)
-  })()
+  const rawContent = readGeminiResponseText(data)
+  const answer = sanitizeRefineAnswer(rawContent)
+  refineLog('custom raw content string', JSON.stringify(rawContent))
+  refineLog('custom cleaned answer string', JSON.stringify(answer))
+  refineLog('custom parsed answer', { rawContent, answer })
 
-  if (parsed.suggestions.length === 0) {
-    throw new Error('Could not generate refine options right now. Please try again.')
-  }
-
-  session?.rf?.set(sessionKey, parsed)
-  await setCached(key, parsed)
-  await trimCacheIfNeeded()
-  return parsed
+  return answer || rawContent
 }
 
 // Function to check if a node or any of its parents should be excluded from translation (DND)
@@ -1409,16 +2008,31 @@ function parseSarvamErrorBody(responseText: string, status: number): string {
   return `API error (${status}).`
 }
 
+function parseGeminiErrorBody(responseText: string, status: number): string {
+  try {
+    const data = JSON.parse(responseText)
+    const msg = data?.error?.message || data?.message
+    if (typeof msg === 'string' && msg.trim()) return msg
+  } catch {
+    // Ignore parse errors and fall back to status-based messages.
+  }
+  if (status === 400) return 'Bad request. Check the refine prompt and selected text.'
+  if (status === 403) return 'Gemini API key invalid or expired. Check your Gemini API key.'
+  if (status === 429) return 'Gemini rate limit reached. Wait a moment and try again.'
+  if (status >= 500) return 'Gemini API server error. Try again in a few moments.'
+  return `Gemini API error (${status}).`
+}
+
 // Parse API errors into user-friendly messages
 function getApiErrorMessage(error: unknown, apiName: string): string {
   if (error instanceof Error) {
     const msg = error.message
     if (msg.includes('timed out')) return msg
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed') || msg.includes('Network request failed')) {
-      return 'Network error: Cannot reach Sarvam API. Check your internet connection and firewall.'
+      return `Network error: Cannot reach the ${apiName} API. Check your internet connection and firewall.`
     }
     if (msg.includes('invalid_api_key') || msg.includes('403') || msg.includes('Forbidden')) {
-      return 'API key invalid or expired. Check your Sarvam API key in the plugin.'
+      return `API key invalid or expired. Check your ${apiName} API key in the plugin.`
     }
     if (msg.includes('insufficient_quota') || msg.includes('429') || msg.includes('rate limit')) {
       return 'Rate limit or quota exceeded. Wait a minute and try again.'
@@ -1427,7 +2041,7 @@ function getApiErrorMessage(error: unknown, apiName: string): string {
       return 'Request invalid: Text may be too long or language not supported. Check API limits.'
     }
     if (msg.includes('500') || msg.includes('Internal Server')) {
-      return 'Sarvam API server error. Try again in a few moments.'
+      return `${apiName} API server error. Try again in a few moments.`
     }
     if (msg.includes('400') || msg.includes('Bad Request')) {
       return `Bad request to ${apiName} API. Check input text and language settings.`
@@ -1572,9 +2186,10 @@ async function translateText(
       sourceCode = LANGUAGE_CODES[detected] || 'en-IN'
     }
     const targetCode = LANGUAGE_CODES[targetLanguage] || targetLanguage
-    const cacheKeyStr = cacheKey('tr', config.model, sourceCode, targetCode, config.mode, norm)
+    const outputScript = config.outputScript || 'default'
+    const cacheKeyStr = cacheKey('tr', config.model, sourceCode, targetCode, config.mode, outputScript, norm)
     
-    const sk = `${config.model}|${sourceCode}|${targetCode}|${config.mode}|${norm}`
+    const sk = `${config.model}|${sourceCode}|${targetCode}|${config.mode}|${outputScript}|${norm}`
     if (session?.tr) {
       const hit = session.tr.get(sk)
       if (hit != null) return hit
@@ -1592,7 +2207,8 @@ async function translateText(
       target_language_code: targetCode,
       model: config.model,
       mode: config.mode,
-      numerals_format: 'international'
+      numerals_format: 'international',
+      ...(config.outputScript ? { output_script: config.outputScript } : {}),
     }
     
     debugLog('Translation request:', {
@@ -2209,15 +2825,16 @@ async function translateSelectedRange(
   targetLanguage: string,
   sourceLanguage: string | undefined,
   session: SessionCache,
-  mode: TranslationMode = 'sarvam-translate'
-): Promise<{ success: boolean; notified: boolean }> {
+  mode: TranslationMode = 'sarvam-translate',
+  sourceTextOverride?: string
+): Promise<{ success: boolean; notified: boolean; appliedText: string }> {
   const fullText    = node.characters
-  const selected    = fullText.substring(start, end)
+  const selected    = sourceTextOverride ?? fullText.substring(start, end)
   const trimmed     = selected.trim()
 
   if (!trimmed) {
     figma.notify('Please select some text (not just spaces) to translate.', { error: true })
-    return { success: false, notified: true }
+    return { success: false, notified: true, appliedText: fullText.substring(start, end) }
   }
 
   // 1. Snapshot ALL segment styles before we touch anything
@@ -2301,7 +2918,7 @@ async function translateSelectedRange(
     }
   }
 
-  return { success: true, notified: false }
+  return { success: true, notified: false, appliedText: replacement }
 }
 
 async function applyRefineSuggestionToNode(
@@ -2343,6 +2960,14 @@ async function applyRefineSuggestionToNode(
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Message handler for translation requests
+figma.on('selectionchange', () => {
+  try {
+    figma.ui.postMessage({ type: 'refine-selection-changed' })
+  } catch {
+    // Ignore if the UI is not ready yet.
+  }
+})
+
 figma.ui.onmessage = async (msg) => {
   debugLog('\n=== MESSAGE RECEIVED ===')
   debugLog('Message type:', msg.type)
@@ -2354,41 +2979,75 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === 'get-refine-context') {
     try {
       const context = await getRefineSelectionContext()
+      refineLog('context loaded', context)
       figma.ui.postMessage({ type: 'refine-context', context })
     } catch (error) {
       const errMsg = getApiErrorMessage(error, 'Refine')
-      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      refineWarn('context error', error)
+      figma.ui.postMessage({ type: 'refine-error', scope: 'context', message: errMsg })
       figma.notify(errMsg, { error: true })
     }
-  } else if (msg.type === 'refine-generate') {
+  } else if (msg.type === 'load-refine-selection') {
     try {
-      await requireSarvamApiKey()
       const context = await getRefineSelectionContext()
+      refineLog('load selection', context)
+      figma.ui.postMessage({ type: 'refine-context', context })
+      figma.ui.postMessage({ type: 'refine-selection-loaded', context, suggestions: [] })
+    } catch (error) {
+      const errMsg = getApiErrorMessage(error, 'Refine')
+      refineWarn('load selection error', error)
+      figma.ui.postMessage({ type: 'refine-error', scope: 'base', message: errMsg })
+      figma.notify(errMsg, { error: true })
+    }
+  } else if (msg.type === 'refine-generate-custom') {
+    try {
+      const context = await getRefineSelectionContext()
+      refineLog('custom refine message', {
+        context,
+        prompt: typeof msg.customPrompt === 'string' ? msg.customPrompt : '',
+      })
       if (!context.canRefine || !context.nodeId) {
         const message = context.message || 'Select one text layer or highlight a text range to refine.'
-        figma.ui.postMessage({ type: 'refine-error', message })
+        figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message })
         figma.notify(message, { error: true })
         return
       }
 
-      figma.ui.postMessage({ type: 'refine-started' })
+      const customPrompt = typeof msg.customPrompt === 'string' ? msg.customPrompt.trim() : ''
+      if (!customPrompt) {
+        const message = 'Add a refine prompt to continue.'
+        figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message })
+        figma.notify(message, { error: true })
+        return
+      }
+
+      await requireGeminiApiKey()
+      figma.ui.postMessage({ type: 'refine-custom-started' })
       const session = createSessionCache()
-      const result = await generateRefineOptions(
+      const answer = await generateCustomRefineAnswer(
         context.text,
-        typeof msg.intent === 'string' ? msg.intent : 'alternatives',
-        typeof msg.customPrompt === 'string' ? msg.customPrompt : '',
+        customPrompt,
         context.kind === 'range' ? 'range' : 'node',
+        Array.isArray(msg.history) ? msg.history : [],
+        typeof msg.layerText === 'string' ? msg.layerText : context.layerText,
         session
       )
+      refineLog('custom refine complete', { answer })
+      if (!answer.trim()) {
+        throw new Error('Gemini returned an empty reply. Please try rephrasing your prompt.')
+      }
       figma.ui.postMessage({
-        type: 'refine-complete',
-        context,
-        suggestions: result.suggestions,
-        synonyms: result.synonyms,
+        type: 'refine-generated',
+        generatedText: answer,
+        prompt: customPrompt,
+        nodeId: context.nodeId,
+        selectionKey: context.nodeId,
+        seedText: typeof msg.layerText === 'string' ? msg.layerText : context.layerText || context.text,
       })
     } catch (error) {
       const errMsg = getApiErrorMessage(error, 'Refine')
-      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      refineWarn('custom refine error', error)
+      figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message: errMsg })
       figma.notify(errMsg, { error: true })
     }
   } else if (msg.type === 'refine-apply') {
@@ -2407,7 +3066,7 @@ figma.ui.onmessage = async (msg) => {
       figma.notify('Applied refined copy.')
     } catch (error) {
       const errMsg = getApiErrorMessage(error, 'Refine apply')
-      figma.ui.postMessage({ type: 'refine-error', message: errMsg })
+      figma.ui.postMessage({ type: 'refine-error', scope: 'apply', message: errMsg })
       figma.notify(errMsg, { error: true })
     }
   } else if (msg.type === 'translate') {
@@ -2436,22 +3095,46 @@ figma.ui.onmessage = async (msg) => {
           message: 'Translating selected text…'
         })
         const session = createSessionCache()
-        const sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
+        let sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
+        let sourceTextForTranslation = selectedText
         if (await isTextAlreadyInTargetLanguage(selectedText, msg.targetLanguage, session)) {
-          const message = getAlreadyTranslatedMessage(msg.targetLanguage)
-          figma.notify(message, { timeout: 2200 })
-          figma.ui.postMessage({
-            type: 'translation-complete', count: 0, errors: 0, total: 1,
-            weightMappings: [], errorMessages: []
-          })
-          return
+          const restyle = resolveRestyleTranslation(
+            selectedRange.node,
+            'range',
+            selectedText,
+            msg.targetLanguage,
+            translationMode
+          )
+          if (restyle.status === 'restyle') {
+            sourceTextForTranslation = restyle.sourceText || selectedText
+            sourceLanguage = restyle.sourceLanguage
+          } else {
+            figma.notify(restyle.message, { error: restyle.status === 'missing', timeout: 2400 })
+            figma.ui.postMessage({
+              type: 'translation-complete',
+              count: 0,
+              errors: restyle.status === 'missing' ? 1 : 0,
+              total: 1,
+              weightMappings: [],
+              errorMessages: restyle.status === 'missing' ? [restyle.message] : []
+            })
+            return
+          }
         }
         try {
+          const actualSourceLanguage = await resolveActualSourceLanguage(sourceTextForTranslation, sourceLanguage, session)
           const result = await translateSelectedRange(
             selectedRange.node, selectedRange.start, selectedRange.end,
-            msg.targetLanguage, sourceLanguage, session, translationMode
+            msg.targetLanguage, sourceLanguage, session, translationMode, sourceTextForTranslation
           )
           if (!result.notified) {
+            storeRangeTranslationMemory(selectedRange.node, {
+              sourceText: sourceTextForTranslation,
+              translatedText: result.appliedText,
+              sourceLanguage: actualSourceLanguage,
+              targetLanguage: msg.targetLanguage,
+              mode: translationMode,
+            })
             figma.ui.postMessage({
               type: 'translation-complete', count: 1, errors: 0, total: 1,
               weightMappings: [], errorMessages: []
@@ -2673,15 +3356,54 @@ figma.ui.onmessage = async (msg) => {
             translatedCount++
             debugLog(`✅ LMA: skipped translation and font/style changes: "${originalText.substring(0, 30)}..."`)
           } else {
+            let sourceTextForTranslation = originalText
+            let sourceLanguageForTranslation = sourceLanguage
+            let isStyleRestyle = false
+
             if (await isTextAlreadyInTargetLanguage(originalText, msg.targetLanguage, session)) {
-              alreadyTranslatedCount++
-              lastAlreadyTranslatedMessage = getAlreadyTranslatedMessage(msg.targetLanguage)
-              debugLog(`⏭️ Already in target language: "${originalText.substring(0, 30)}..."`)
-              continue
+              const restyle = resolveRestyleTranslation(
+                node,
+                'node',
+                originalText,
+                msg.targetLanguage,
+                translationMode
+              )
+              if (restyle.status === 'restyle') {
+                sourceTextForTranslation = restyle.sourceText || originalText
+                sourceLanguageForTranslation = restyle.sourceLanguage
+                isStyleRestyle = true
+              } else if (restyle.status === 'already') {
+                alreadyTranslatedCount++
+                lastAlreadyTranslatedMessage = restyle.message
+                debugLog(`⏭️ Already in target language with same style: "${originalText.substring(0, 30)}..."`)
+                continue
+              } else {
+                throw new TranslationRestyleError(restyle.message)
+              }
             }
-            const segmentResult = await translateWithStyledSegments(
-              node, msg.targetLanguage, sourceLanguage, session, translationMode
+
+            const actualSourceLanguage = await resolveActualSourceLanguage(
+              sourceTextForTranslation,
+              sourceLanguageForTranslation,
+              session
             )
+
+            if (isStyleRestyle && node.getStyledTextSegments([...STYLE_FIELDS]).length > 1) {
+              throw new TranslationRestyleError(
+                'Style swapping after translation is currently supported only for single-style text layers. Re-translate from the original source if you need a fresh variant here.'
+              )
+            }
+
+            const segmentResult = !isStyleRestyle
+              ? await translateWithStyledSegments(
+                  node,
+                  msg.targetLanguage,
+                  sourceLanguageForTranslation,
+                  session,
+                  translationMode
+                )
+              : { success: false, weightMappings: [], wasMixed: false }
+
             if (segmentResult.success) {
               // Only apply whole-node style mapping for uniform (single-style) nodes.
               // For mixed-style nodes, translateWithStyledSegments already applied per-segment
@@ -2691,19 +3413,39 @@ figma.ui.onmessage = async (msg) => {
                 if (applied) debugLog(`✅ Applied matching style from file`)
               }
               weightMappings.push(...segmentResult.weightMappings)
+              storeNodeTranslationMemory(node, {
+                sourceText: sourceTextForTranslation,
+                translatedText: node.characters,
+                sourceLanguage: actualSourceLanguage,
+                targetLanguage: msg.targetLanguage,
+                mode: translationMode,
+              })
               translatedCount++
               debugLog(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
             } else {
-              const translatedText = await translateText(originalText, msg.targetLanguage, sourceLanguage, session, translationMode)
+              const translatedText = await translateText(
+                sourceTextForTranslation,
+                msg.targetLanguage,
+                sourceLanguageForTranslation,
+                session,
+                translationMode
+              )
               if (translatedText && translatedText.trim().length > 0) {
                 const actuallyChanged = translatedText !== originalText
-                if (actuallyChanged) {
+                if (actuallyChanged || isStyleRestyle) {
                   const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
                   if (!applied) {
                     const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
                     if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                   }
                   node.characters = translatedText
+                  storeNodeTranslationMemory(node, {
+                    sourceText: sourceTextForTranslation,
+                    translatedText,
+                    sourceLanguage: actualSourceLanguage,
+                    targetLanguage: msg.targetLanguage,
+                    mode: translationMode,
+                  })
                   translatedCount++
                   debugLog(`✅ Translated and font updated: "${originalText.substring(0, 30)}..." → "${translatedText.substring(0, 30)}..."`)
                 } else {
@@ -2733,7 +3475,7 @@ figma.ui.onmessage = async (msg) => {
           const loc = getNodeLocation(node)
           // Apply font/style even when API fails (e.g. "Source and target same" for numbers)
           let fontApplied = false
-          if (type !== 'lma') {
+          if (type !== 'lma' && !(error instanceof TranslationRestyleError)) {
             try {
               const srcOverride = (type === 'translate' || type === 'dnd') ? sourceStyleBeforeTranslate ?? undefined : undefined
               const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, srcOverride)
@@ -2940,6 +3682,7 @@ figma.ui.onmessage = async (msg) => {
               // LMA = Leave Me Alone: preserve text and font/style exactly as-is (clone already has original; no-op)
             } else {
               await loadAllFontsForTextNode(node)
+              const actualSourceLanguage = await resolveActualSourceLanguage(originalText, sourceLanguage, bulkSession)
               const segmentResult = await translateWithStyledSegments(node, targetLang, sourceLanguage, bulkSession, translationMode)
               if (!segmentResult.success) {
                 const translated = await translateText(originalText, targetLang, sourceLanguage, bulkSession, translationMode)
@@ -2947,6 +3690,13 @@ figma.ui.onmessage = async (msg) => {
                   const applied = await applyUserDefinedStyleMapping(node, targetLang)
                   if (!applied) await applyFontToTextNode(node, targetLang)
                   node.characters = translated
+                  storeNodeTranslationMemory(node, {
+                    sourceText: originalText,
+                    translatedText: translated,
+                    sourceLanguage: actualSourceLanguage,
+                    targetLanguage: targetLang,
+                    mode: translationMode,
+                  })
                 } else if (translated?.trim()) {
                   const applied = await applyUserDefinedStyleMapping(node, targetLang)
                   if (!applied) await applyFontToTextNode(node, targetLang)
@@ -2960,6 +3710,13 @@ figma.ui.onmessage = async (msg) => {
                 if (!segmentResult.wasMixed) {
                   await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
                 }
+                storeNodeTranslationMemory(node, {
+                  sourceText: originalText,
+                  translatedText: node.characters,
+                  sourceLanguage: actualSourceLanguage,
+                  targetLanguage: targetLang,
+                  mode: translationMode,
+                })
               }
             }
           } catch (err) {

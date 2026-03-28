@@ -62,10 +62,11 @@
         "https://api.sarvam.ai/translate",
         "https://api.sarvam.ai/text-lid",
         "https://api.sarvam.ai/transliterate",
+        "https://generativelanguage.googleapis.com",
         "https://fonts.googleapis.com/css2",
         "https://fonts.gstatic.com"
       ],
-      "reasoning": "Plugin needs Sarvam API access for translation and Google Fonts for the UI typeface."
+      "reasoning": "Plugin needs Sarvam API access for translation, Gemini API access for refine chat, and Google Fonts for the UI typeface."
     }
   }
 }

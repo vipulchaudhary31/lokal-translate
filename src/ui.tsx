@@ -151,6 +151,29 @@ const translationModeOptions: Array<{ value: TranslationMode; label: string; des
   { value: 'modern-colloquial', label: 'Modern', description: 'More current and conversational' },
 ]
 
+type RefineSelectionState = {
+  canRefine: boolean
+  kind: 'node' | 'range' | 'invalid'
+  text: string
+  layerText?: string
+  charCount: number
+  nodeId?: string
+  nodeName?: string
+  start?: number
+  end?: number
+  message?: string
+}
+type RefineConversationTurn = {
+  role: 'user' | 'assistant'
+  content: string
+}
+type RefineThreadState = {
+  selectionKey: string
+  nodeId: string
+  seedText: string
+  turns: RefineConversationTurn[]
+}
+
 function LanguageCardArt({
   art,
   selected,
@@ -813,12 +836,17 @@ function Plugin() {
   const [targetLanguage, setTargetLanguage] = React.useState('te')
   const [isTranslateRunning, setIsTranslateRunning] = React.useState(false)
   const [isBulkRunning, setIsBulkRunning] = React.useState(false)
+  const [isGeneratingCustomRefine, setIsGeneratingCustomRefine] = React.useState(false)
   const [weightMappingInfo, setWeightMappingInfo] = React.useState<string[]>([])
   const [showWeightMappings, setShowWeightMappings] = React.useState(false)
   const [bulkLanguages, setBulkLanguages] = React.useState<string[] | null>(DEFAULT_BULK_LANGUAGES)
   const [bulkSetupSelection, setBulkSetupSelection] = React.useState<string[]>(DEFAULT_BULK_LANGUAGES)
   const [assumeEnglishSource, setAssumeEnglishSource] = React.useState(false)
   const [translationMode, setTranslationMode] = React.useState<TranslationMode>('sarvam-translate')
+  const [refinePrompt, setRefinePrompt] = React.useState('')
+  const [refineSelection, setRefineSelection] = React.useState<RefineSelectionState | null>(null)
+  const [refineThreads, setRefineThreads] = React.useState<Record<string, RefineThreadState>>({})
+  const [refineAnswer, setRefineAnswer] = React.useState('')
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -829,7 +857,7 @@ function Plugin() {
   const [fontPickerForLang, setFontPickerForLang] = React.useState<string | null>(null)
   const [fontSwapPicker, setFontSwapPicker] = React.useState<'target' | null>(null)
   const [showTranslationStylePicker, setShowTranslationStylePicker] = React.useState(false)
-  const [page, setPage] = React.useState<'translate' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs' | 'apiKey'>('translate')
+  const [page, setPage] = React.useState<'translate' | 'refine' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs' | 'apiKey'>('translate')
   const [apiKey, setApiKey] = React.useState('')
   const [apiKeyDraft, setApiKeyDraft] = React.useState('')
   const [apiKeyLoaded, setApiKeyLoaded] = React.useState(false)
@@ -944,6 +972,18 @@ function Plugin() {
     }
   }
 
+  const loadRefineContext = React.useCallback((clearResults = false) => {
+    if (clearResults) {
+      setRefineAnswer('')
+    }
+    parent.postMessage({ pluginMessage: { type: 'get-refine-context' } }, '*')
+  }, [])
+
+  const getRefineThreadKey = React.useCallback((context: RefineSelectionState | null) => {
+    if (!context?.canRefine || !context.nodeId) return null
+    return context.nodeId
+  }, [])
+
   React.useEffect(() => {
     parent.postMessage({ pluginMessage: { type: 'get-api-key' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-bulk-prefs' } }, '*')
@@ -959,6 +999,10 @@ function Plugin() {
   React.useEffect(() => {
     hasSeenUsageHintRef.current = hasSeenUsageHint
   }, [hasSeenUsageHint])
+
+  React.useEffect(() => {
+    if (page === 'refine') loadRefineContext(true)
+  }, [page, loadRefineContext, getRefineThreadKey])
 
   React.useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -999,6 +1043,62 @@ function Plugin() {
           setIsTranslateRunning(true)
           setIsBulkRunning(false)
           break
+        case 'refine-selection-changed':
+          if (page === 'refine') {
+            setRefineAnswer('')
+            loadRefineContext(true)
+          }
+          break
+        case 'refine-context':
+          {
+            const context = msg.context && typeof msg.context === 'object' ? msg.context as RefineSelectionState : null
+            setRefineSelection(context)
+            const nextKey = getRefineThreadKey(context)
+            if (!nextKey || !context?.text) {
+              setRefineAnswer('')
+            } else {
+              const existingThread = refineThreads[nextKey]
+              setRefineAnswer(existingThread?.turns[existingThread.turns.length - 1]?.content || '')
+            }
+          }
+          break
+        case 'refine-custom-started':
+          setIsGeneratingCustomRefine(true)
+          break
+        case 'refine-generated':
+          setIsGeneratingCustomRefine(false)
+          if (typeof msg.generatedText === 'string') {
+            setRefineAnswer(msg.generatedText)
+          }
+          if (typeof msg.nodeId === 'string' && typeof msg.prompt === 'string' && typeof msg.generatedText === 'string') {
+            setRefineThreads(prev => {
+              const threadKey = msg.nodeId
+              const current = prev[threadKey] ?? {
+                selectionKey: threadKey,
+                nodeId: msg.nodeId,
+                seedText: typeof msg.seedText === 'string' ? msg.seedText : '',
+                turns: [],
+              }
+              return {
+                ...prev,
+                [threadKey]: {
+                  ...current,
+                  turns: [
+                    ...current.turns,
+                    { role: 'user', content: msg.prompt },
+                    { role: 'assistant', content: msg.generatedText },
+                  ],
+                },
+              }
+            })
+          }
+          setRefinePrompt('')
+          break
+        case 'refine-error':
+          if (msg.scope === 'custom') {
+            setIsGeneratingCustomRefine(false)
+          }
+          break
         case 'translation-progress':
           break
         case 'bulk-started':
@@ -1031,6 +1131,7 @@ function Plugin() {
         case 'error':
           setIsTranslateRunning(false)
           setIsBulkRunning(false)
+          setIsGeneratingCustomRefine(false)
           setIsSwapping(false)
           setIsSavingApiKey(false)
           if (typeof msg.message === 'string' && msg.message.toLowerCase().includes('api key')) {
@@ -1084,7 +1185,11 @@ function Plugin() {
           setStyleMappings({})
           setSourceStyles([])
           setAssumeEnglishSource(false)
-          setTranslationMode('formal')
+          setTranslationMode('sarvam-translate')
+          setRefinePrompt('')
+          setRefineSelection(null)
+          setRefineThreads({})
+          setRefineAnswer('')
           setHasSeenUsageHint(false)
           setShowUsageHintModal(false)
           setPendingUsageAction(null)
@@ -1093,9 +1198,12 @@ function Plugin() {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [])
+  }, [getRefineThreadKey, loadRefineContext, page, refineThreads])
 
   const activePage = page
+  const activeRefineSelectionKey = getRefineThreadKey(refineSelection)
+  const activeRefineThread = activeRefineSelectionKey ? refineThreads[activeRefineSelectionKey] ?? null : null
+  const hasActiveRefineThread = Boolean(activeRefineThread && activeRefineThread.turns.length > 0)
   const isApiKeyRequired = activePage === 'apiKey' && !apiKey.trim()
   const trimmedApiKeyDraft = apiKeyDraft.trim()
   const isApiKeyFormatValid = trimmedApiKeyDraft.length === 0 || /^sk_[A-Za-z0-9_]{16,}$/.test(trimmedApiKeyDraft)
@@ -1145,6 +1253,29 @@ function Plugin() {
       return
     }
     runTranslate()
+  }
+
+  const handleRunRefine = () => {
+    if (isGeneratingCustomRefine) return
+    if (!refineSelection?.canRefine) {
+      loadRefineContext(true)
+      notifyInFigma(refineSelection?.message || 'Select one text layer or highlight text to refine.', true)
+      return
+    }
+    if (!refinePrompt.trim()) {
+      notifyInFigma('Add a refine prompt to continue.', true)
+      return
+    }
+    setIsGeneratingCustomRefine(true)
+    parent.postMessage({
+      pluginMessage: {
+        type: 'refine-generate-custom',
+        customPrompt: refinePrompt,
+        selectionKey: activeRefineSelectionKey,
+        history: activeRefineThread ? activeRefineThread.turns : [],
+        layerText: refineSelection.layerText || refineSelection.text,
+      },
+    }, '*')
   }
 
   const runBulkStressTest = () => {
@@ -1265,7 +1396,7 @@ function Plugin() {
       <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none'}`}>
         <div className={`px-5 py-4 ${isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
           <div className={isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-4'}>
-            {activePage === 'translate' || activePage === 'fontSwap' ? (
+            {activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' ? (
               <div className="space-y-[8px] pt-1">
                 <div className="flex items-end gap-[18px]">
                   <button
@@ -1276,6 +1407,15 @@ function Plugin() {
                     }`}
                   >
                     <span>Translate</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage('refine')}
+                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                      activePage === 'refine' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                    }`}
+                  >
+                    <span>Refine</span>
                   </button>
                   <button
                     type="button"
@@ -1428,6 +1568,152 @@ function Plugin() {
                         </CardContent>
                       </Card>
                     )}
+                  </div>
+                ) : activePage === 'refine' ? (
+                  <div className="space-y-4">
+                    <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                      <CardContent className="space-y-3 p-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-foreground" />
+                            <h3 className="text-sm font-semibold text-foreground">Selected Text</h3>
+                          </div>
+                        </div>
+                        {refineSelection?.canRefine ? (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                              <span className="rounded-full border border-border bg-muted/40 px-2 py-1">
+                                {refineSelection.kind === 'range' ? 'Highlighted text' : 'Full layer'}
+                              </span>
+                              <span>{refineSelection.charCount} chars</span>
+                              {refineSelection.nodeName ? <span className="truncate">Layer: {refineSelection.nodeName}</span> : null}
+                            </div>
+                            <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
+                              {refineSelection.text}
+                            </div>
+                            {refineSelection.kind === 'range' && refineSelection.layerText ? (
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                Using the full parent layer as supporting context for this conversation.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                            {refineSelection?.message || 'Select one text layer or highlight text to refine.'}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
+                      <CardContent className="space-y-3 p-4">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-semibold text-foreground">Refine Chat</h3>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            Chat with the selected layer. Replies are copy-only and this conversation stays attached to the same text layer.
+                          </p>
+                        </div>
+                        {hasActiveRefineThread ? (
+                          <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2">
+                            <p className="text-xs leading-relaxed text-muted-foreground">
+                              Follow-up context active. This prompt will remember the last {activeRefineThread?.turns.length} turns for this layer.
+                            </p>
+                            <button
+                              type="button"
+                              className="shrink-0 text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                              onClick={() => {
+                                const nodeId = refineSelection?.nodeId
+                                if (!activeRefineSelectionKey || !nodeId) return
+                                setRefineThreads(prev => ({
+                                  ...prev,
+                                  [activeRefineSelectionKey]: {
+                                    selectionKey: activeRefineSelectionKey,
+                                    nodeId,
+                                    seedText: refineSelection.text,
+                                    turns: [],
+                                  },
+                                }))
+                                setRefineAnswer('')
+                              }}
+                            >
+                              Reset context
+                            </button>
+                          </div>
+                        ) : null}
+                        <div className="space-y-2">
+                          {activeRefineThread && activeRefineThread.turns.length > 0 ? (
+                            <div className="max-h-56 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y rounded-md border border-border/80 bg-background p-3">
+                              {activeRefineThread.turns.map((turn, index) => (
+                                <div
+                                  key={`${turn.role}-${index}`}
+                                  className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                  <div
+                                    className={`max-w-[92%] px-3 py-2 text-sm leading-relaxed ${
+                                      turn.role === 'user'
+                                        ? 'rounded-[18px] bg-[#F1F1F1] text-foreground'
+                                        : 'text-foreground'
+                                    }`}
+                                  >
+                                    <p className="mb-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                                      {turn.role === 'user' ? 'You' : 'Lokal Refine'}
+                                    </p>
+                                    <p className="whitespace-pre-wrap break-words">{turn.content}</p>
+                                    {turn.role === 'assistant' ? (
+                                      <div className="mt-2 flex justify-end">
+                                        <button
+                                          type="button"
+                                          className="text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                                          onClick={async () => {
+                                            try {
+                                              await navigator.clipboard.writeText(turn.content)
+                                              notifyInFigma('Refine reply copied.')
+                                            } catch {
+                                              notifyInFigma('Could not copy reply. Please copy it manually.', true)
+                                            }
+                                          }}
+                                        >
+                                          Copy
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+                              Start the conversation with a prompt. The reply will explain choices and give a best recommendation.
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-muted-foreground">Prompt</Label>
+                          <textarea
+                            value={refinePrompt}
+                            onChange={event => setRefinePrompt(event.target.value)}
+                            onKeyDown={event => {
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                if (!isGeneratingCustomRefine && refineSelection?.canRefine && refinePrompt.trim()) {
+                                  handleRunRefine()
+                                }
+                              }
+                            }}
+                            rows={3}
+                            placeholder='Example: Change this to "personal" in Hindi script and explain the best choice.'
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/20"
+                          />
+                        </div>
+                        <Button
+                          className="h-9 w-full rounded-md text-sm font-medium shadow-sm"
+                          disabled={isGeneratingCustomRefine || !refineSelection?.canRefine || !refinePrompt.trim()}
+                          onClick={handleRunRefine}
+                        >
+                          {isGeneratingCustomRefine ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : 'Send'}
+                        </Button>
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1695,11 +1981,11 @@ function Plugin() {
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
 
-            {(activePage === 'translate' || activePage === 'fontSwap' || activePage === 'apiKey') ? <BrandingStrip /> : null}
+            {(activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' || activePage === 'apiKey') ? <BrandingStrip /> : null}
           </div>
         </div>
       </div>
-      {activePage === 'translate' ? (
+      {activePage === 'translate' || activePage === 'refine' ? (
         <div className="flex items-center gap-4 bg-background px-5 pb-3 pt-2">
           <button
             type="button"
@@ -1708,15 +1994,17 @@ function Plugin() {
           >
             Reset Data
           </button>
-          <button
-            type="button"
-            className={`text-[11px] underline transition-colors ${
-              assumeEnglishSource ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setAssumeEnglishSource(prev => !prev)}
-          >
-            Assume English: {assumeEnglishSource ? 'On' : 'Off'}
-          </button>
+          {activePage === 'translate' ? (
+            <button
+              type="button"
+              className={`text-[11px] underline transition-colors ${
+                assumeEnglishSource ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setAssumeEnglishSource(prev => !prev)}
+            >
+              Assume English: {assumeEnglishSource ? 'On' : 'Off'}
+            </button>
+          ) : null}
           <button
             type="button"
             className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
