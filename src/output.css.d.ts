@@ -199,6 +199,7 @@ declare const styles: {
   readonly "bg-primary/35": string;
   readonly "bg-primary/5": string;
   readonly "bg-primary/90": string;
+  readonly "bg-red-50": string;
   readonly "bg-secondary": string;
   readonly "bg-secondary/30": string;
   readonly "bg-secondary/80": string;
@@ -237,6 +238,7 @@ declare const styles: {
   readonly "border-primary/20": string;
   readonly "border-primary/30": string;
   readonly "border-r": string;
+  readonly "border-red-200": string;
   readonly "border-sidebar-border": string;
   readonly "border-solid": string;
   readonly "border-t": string;
@@ -936,6 +938,7 @@ declare const styles: {
   readonly "hover:bg-muted/70": string;
   readonly "hover:bg-primary": string;
   readonly "hover:bg-primary/90": string;
+  readonly "hover:bg-red-100": string;
   readonly "hover:bg-secondary/60": string;
   readonly "hover:bg-secondary/80": string;
   readonly "hover:bg-sidebar-accent": string;
@@ -958,6 +961,7 @@ declare const styles: {
   readonly "hover:text-foreground": string;
   readonly "hover:text-muted-foreground": string;
   readonly "hover:text-primary-foreground": string;
+  readonly "hover:text-red-900": string;
   readonly "hover:text-sidebar-accent-foreground": string;
   readonly "hover:translate-x-[2px]": string;
   readonly "hover:translate-y-[2px]": string;
@@ -2805,6 +2809,9 @@ declare const styles: {
   readonly "text-popover-foreground": string;
   readonly "text-primary": string;
   readonly "text-primary-foreground": string;
+  readonly "text-red-700": string;
+  readonly "text-red-800": string;
+  readonly "text-red-900": string;
   readonly "text-secondary-foreground": string;
   readonly "text-sidebar-foreground": string;
   readonly "text-sidebar-foreground/70": string;

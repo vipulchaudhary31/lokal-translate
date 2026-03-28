@@ -15,6 +15,7 @@ const SARVAM_API_KEY_STORAGE_KEY = 'ai-translate-sarvam-api-key'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
+const MAYURA_TRANSLATE_MAX_CHARS = 1000
 
 // Language mapping for Sarvam API
 const LANGUAGE_CODES: Record<string, string> = {
@@ -59,6 +60,25 @@ function getNodeLocation(node: SceneNode): string {
   const layerName = node.name || 'text'
   if (frameName) return `"${layerName}" in frame "${frameName}"`
   return `"${layerName}"`
+}
+
+class MayuraTranslateLengthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MayuraTranslateLengthError'
+  }
+}
+
+function getMayuraTranslateLimitMessage(subject: string, charCount: number): string {
+  return `Mayura supports up to ${MAYURA_TRANSLATE_MAX_CHARS} characters per translation request. ${subject} has ${charCount} characters. Please select less text and try again.`
+}
+
+function assertMayuraTranslateLength(text: string, subject: string): string {
+  const cleanText = text.trim()
+  if (cleanText.length > MAYURA_TRANSLATE_MAX_CHARS) {
+    throw new MayuraTranslateLengthError(getMayuraTranslateLimitMessage(subject, cleanText.length))
+  }
+  return cleanText
 }
 
 // Languages for bulk stress test (English → all Indian languages)
@@ -1195,10 +1215,9 @@ async function transliterateText(text: string, sourceLanguage: string, targetLan
 async function translateText(text: string, targetLanguage: string, sourceLanguage?: string, session?: SessionCache): Promise<string> {
   try {
     const apiKey = await requireSarvamApiKey()
-    const cleanText = text.trim()
+    const cleanText = assertMayuraTranslateLength(text, 'Selected text')
     if (!cleanText || cleanText.length === 0) return text
-    const truncatedText = cleanText.length > 2000 ? cleanText.substring(0, 2000) : cleanText
-    const norm = normalizeTextForCache(truncatedText)
+    const norm = normalizeTextForCache(cleanText)
     
     // Skip only if the text is already purely in the target language.
     //
@@ -1208,15 +1227,15 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     //
     // For Indic target: skip when the text is already in that Indic script AND LID agrees,
     // but still call the API for Latin-script text (LID can misclassify e.g. "Srinivasalu Reddy").
-    const detected = await detectLanguage(truncatedText, session)
+    const detected = await detectLanguage(cleanText, session)
     if (targetLanguage === 'en') {
-      if (!isInIndicScript(truncatedText)) {
-        debugLog(`Skipping translate to English: no Indic script found ("${truncatedText.substring(0, 30)}...")`)
+      if (!isInIndicScript(cleanText)) {
+        debugLog(`Skipping translate to English: no Indic script found ("${cleanText.substring(0, 30)}...")`)
         return text
       }
     } else {
-      if (detected === targetLanguage && isInIndicScript(truncatedText)) {
-        debugLog(`Skipping translate: text already in ${targetLanguage} script ("${truncatedText.substring(0, 30)}...")`)
+      if (detected === targetLanguage && isInIndicScript(cleanText)) {
+        debugLog(`Skipping translate: text already in ${targetLanguage} script ("${cleanText.substring(0, 30)}...")`)
         return text
       }
     }
@@ -1243,16 +1262,16 @@ async function translateText(text: string, targetLanguage: string, sourceLanguag
     }
     
     const requestBody = {
-      input: truncatedText,
+      input: cleanText,
       source_language_code: sourceCode,
       target_language_code: targetCode,
-      model: 'sarvam-translate:v1',
+      model: 'mayura:v1',
       mode: 'formal',
       numerals_format: 'international'
     }
     
     debugLog('Translation request:', {
-      input: truncatedText.substring(0, 50) + '...',
+      input: cleanText.substring(0, 50) + '...',
       source_language_code: sourceCode,
       target_language_code: LANGUAGE_CODES[targetLanguage],
       url: SARVAM_API_URL
@@ -1981,6 +2000,8 @@ figma.ui.onmessage = async (msg) => {
       // translate only that portion and leave everything else intact.
       const selectedRange = getActiveSelectedTextRange()
       if (selectedRange) {
+        const selectedText = selectedRange.node.characters.slice(selectedRange.start, selectedRange.end)
+        assertMayuraTranslateLength(selectedText, 'Selected text')
         figma.ui.postMessage({ type: 'translation-started', count: 1 })
         figma.ui.postMessage({
           type: 'translation-progress', current: 1, total: 1,
@@ -2007,7 +2028,7 @@ figma.ui.onmessage = async (msg) => {
           }
         } catch (rangeErr) {
           const errMsg = rangeErr instanceof Error ? rangeErr.message : 'Unknown error'
-          figma.notify(`❌ ${errMsg}`, { error: true })
+          figma.notify(errMsg, { error: true })
           figma.ui.postMessage({
             type: 'translation-complete', count: 0, errors: 1, total: 1,
             weightMappings: [], errorMessages: [errMsg]
@@ -2114,6 +2135,16 @@ figma.ui.onmessage = async (msg) => {
           message: 'No text found in selected items' 
         })
         figma.notify('No text found in selected items', { error: true })
+        return
+      }
+
+      const oversizedNode = textNodes.find(({ originalText, type }) => (
+        type === 'translate' && originalText.trim().length > MAYURA_TRANSLATE_MAX_CHARS
+      ))
+      if (oversizedNode) {
+        const message = getMayuraTranslateLimitMessage(getNodeLocation(oversizedNode.node), oversizedNode.originalText.trim().length)
+        figma.ui.postMessage({ type: 'error', message })
+        figma.notify(message, { error: true })
         return
       }
       
@@ -2298,7 +2329,7 @@ figma.ui.onmessage = async (msg) => {
       if (translatedCount > 0) {
         figma.notify(`✅ Translated ${translatedCount}/${textNodes.length} text elements!`)
       } else if (lastErrorMessage) {
-        figma.notify(`❌ ${lastErrorMessage}`, { error: true })
+        figma.notify(lastErrorMessage, { error: true })
       } else {
         figma.notify(`No changes made. Text may already be in the target language.`, { timeout: 2000 })
       }
@@ -2307,7 +2338,7 @@ figma.ui.onmessage = async (msg) => {
       console.error('Translation error:', error)
       const errMsg = getApiErrorMessage(error, 'Translation')
       figma.ui.postMessage({ type: 'error', message: errMsg })
-      figma.notify(`❌ ${errMsg}`, { error: true })
+      figma.notify(errMsg, { error: true })
     }
   } else if (msg.type === 'bulk-translate-all') {
     try {
@@ -2373,6 +2404,18 @@ figma.ui.onmessage = async (msg) => {
           else if (isDnd) nodeType = 'dnd'
           return { path, originalText: text, type: nodeType }
         })
+        const oversizedItem = textWithPath.find(({ text, node }) => {
+          const isLma = isLmaNode(node)
+          const isHing = !isLma && isHingNode(node, root)
+          const isDnd = !isLma && !isHing && isDndNode(node, root)
+          return !isLma && !isHing && !isDnd && text.trim().length > MAYURA_TRANSLATE_MAX_CHARS
+        })
+        if (oversizedItem) {
+          const message = getMayuraTranslateLimitMessage(getNodeLocation(oversizedItem.node), oversizedItem.text.trim().length)
+          figma.ui.postMessage({ type: 'error', message })
+          figma.notify(message, { error: true })
+          return
+        }
         typesByFrame.push(items)
       }
       
@@ -2500,7 +2543,7 @@ figma.ui.onmessage = async (msg) => {
       console.error('Bulk translate error:', error)
       const errMsg = getApiErrorMessage(error, 'Bulk Translation')
       figma.ui.postMessage({ type: 'error', message: errMsg })
-      figma.notify(`❌ ${errMsg}`, { error: true })
+      figma.notify(errMsg, { error: true })
     }
   } else if (msg.type === 'get-styles-for-font') {
     try {

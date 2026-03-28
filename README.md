@@ -236,7 +236,7 @@ npx tsc
 
 ### **Sarvam AI Translation API**
 - **Endpoint**: `https://api.sarvam.ai/translate`
-- **Model**: sarvam-translate:v1
+- **Model**: mayura:v1
 - **Features**: Formal/informal modes, preprocessing
 - **Rate Limiting**: Sequential processing to avoid limits
 
@@ -248,7 +248,7 @@ npx tsc
   "target_language_code": "ta",
   "speaker_gender": "Female",
   "mode": "formal",
-  "model": "sarvam-translate:v1",
+  "model": "mayura:v1",
   "enable_preprocessing": true
 }
 ```
