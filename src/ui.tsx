@@ -8,6 +8,7 @@ import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
 import { Separator } from './components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import {
   Loader2,
   Info,
@@ -20,6 +21,7 @@ import {
   Check,
   Link,
   ArrowLeft,
+  ArrowUp,
   SlidersHorizontal,
   Languages,
   CaseSensitive,
@@ -143,13 +145,22 @@ const DEFAULT_LANGUAGE_FONTS: Record<string, string> = {
   en: 'Inter',
 }
 
-type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial'
+type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial' | 'transliterate'
 const translationModeOptions: Array<{ value: TranslationMode; label: string; description: string }> = [
   { value: 'sarvam-translate', label: 'Sarvam', description: 'Default model with broader language support' },
   { value: 'formal', label: 'Formal', description: 'Polished and neutral' },
   { value: 'classic-colloquial', label: 'Classic', description: 'Natural everyday phrasing' },
   { value: 'modern-colloquial', label: 'Modern', description: 'More current and conversational' },
+  { value: 'transliterate', label: 'Translit', description: 'Phonetic target-script output from the original source' },
 ]
+
+const translationModeHelperText: Record<TranslationMode, string> = {
+  'sarvam-translate': 'Best when you want the broadest language support and dependable formal output.',
+  'formal': 'Best for polished UI copy, official messaging, and structured product text.',
+  'classic-colloquial': 'Best for general communication that should feel natural without getting too casual.',
+  'modern-colloquial': 'Best for chatty, lighter, everyday phrasing that feels current and direct.',
+  'transliterate': 'Best when you want the original wording carried over phonetically into the target script.',
+}
 
 type RefineSelectionState = {
   canRefine: boolean
@@ -792,46 +803,6 @@ function BrandingStrip() {
   )
 }
 
-function UsageHintModal({
-  open,
-  onClose,
-  onContinue,
-}: {
-  open: boolean
-  onClose: () => void
-  onContinue: () => void
-}) {
-  if (!open) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45" onClick={onClose}>
-      <div
-        className="w-[320px] rounded-xl border border-border bg-card px-4 py-4 shadow-[0_20px_44px_rgba(17,24,39,0.12),0_6px_18px_rgba(17,24,39,0.06)]"
-        onClick={event => event.stopPropagation()}
-      >
-        <div className="space-y-4">
-          <p className="text-center text-sm leading-relaxed text-muted-foreground">
-            Rename a layer to <span className="font-medium text-foreground">&quot;hing&quot;</span> for transliteration, <span className="font-medium text-foreground">&quot;dnd&quot;</span> to skip translation and change to the target font style, or <span className="font-medium text-foreground">&quot;lma&quot;</span> to leave it alone.
-          </p>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-              onClick={onClose}
-            >
-              Close
-            </button>
-            <Button className="h-9 flex-1 rounded-md text-sm font-medium" onClick={onContinue}>
-              Got it
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function Plugin() {
   const [targetLanguage, setTargetLanguage] = React.useState('te')
   const [isTranslateRunning, setIsTranslateRunning] = React.useState(false)
@@ -846,7 +817,10 @@ function Plugin() {
   const [refinePrompt, setRefinePrompt] = React.useState('')
   const [refineSelection, setRefineSelection] = React.useState<RefineSelectionState | null>(null)
   const [refineThreads, setRefineThreads] = React.useState<Record<string, RefineThreadState>>({})
+  const [refineThreadsLoaded, setRefineThreadsLoaded] = React.useState(false)
   const [refineAnswer, setRefineAnswer] = React.useState('')
+  const [displayedRefineThreadKey, setDisplayedRefineThreadKey] = React.useState<string | null>(null)
+  const [refineScrollTarget, setRefineScrollTarget] = React.useState<{ key: string; index: number } | null>(null)
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -860,21 +834,21 @@ function Plugin() {
   const [page, setPage] = React.useState<'translate' | 'refine' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs' | 'apiKey'>('translate')
   const [apiKey, setApiKey] = React.useState('')
   const [apiKeyDraft, setApiKeyDraft] = React.useState('')
+  const [geminiApiKey, setGeminiApiKey] = React.useState('')
+  const [geminiApiKeyDraft, setGeminiApiKeyDraft] = React.useState('')
   const [apiKeyLoaded, setApiKeyLoaded] = React.useState(false)
   const [isSavingApiKey, setIsSavingApiKey] = React.useState(false)
   const [showApiKeyValue, setShowApiKeyValue] = React.useState(false)
+  const [showGeminiApiKeyValue, setShowGeminiApiKeyValue] = React.useState(false)
   const [hasUnsavedFontPrefs, setHasUnsavedFontPrefs] = React.useState(false)
   const [styleMappingModalLang, setStyleMappingModalLang] = React.useState<string | null>(null)
+  const [apiKeyReturnPage, setApiKeyReturnPage] = React.useState<'translate' | 'refine' | 'fontSwap' | 'fontPrefs' | 'bulkPrefs'>('translate')
   const [availableStyles, setAvailableStyles] = React.useState<Array<{ id: string; name: string; sizeStr?: string }>>([])
   const [sourceStyles, setSourceStyles] = React.useState<Array<{ key: string; font: string; size: number; lh: number | null; weight: string; decoration?: string; segmentCount?: number }>>([])
   const [styleMappings, setStyleMappings] = React.useState<Record<string, Record<string, string>>>({})
-  const [hasSeenUsageHint, setHasSeenUsageHint] = React.useState(false)
-  const [showUsageHintModal, setShowUsageHintModal] = React.useState(false)
-  const [pendingUsageAction, setPendingUsageAction] = React.useState<'translate' | 'bulk' | null>(null)
-  const pendingUsageActionRef = React.useRef<'translate' | 'bulk' | null>(null)
-  const hasSeenUsageHintRef = React.useRef(false)
   const cardRailWrapperRef = React.useRef<HTMLDivElement | null>(null)
   const cardRailViewportRef = React.useRef<HTMLDivElement | null>(null)
+  const refineScrollRef = React.useRef<HTMLDivElement | null>(null)
   const cardRefs = React.useRef<Record<string, HTMLButtonElement | null>>({})
   const shadowFrameRef = React.useRef<number | null>(null)
   const [selectedCardShadow, setSelectedCardShadow] = React.useState<null | {
@@ -950,6 +924,7 @@ function Plugin() {
     }
   }, [page, targetLanguage, updateSelectedCardShadow])
 
+
   const effectiveFontForLang = (lang: string): string => {
     const userChoice = fontPrefs[lang]
     if (userChoice && availableFonts.includes(userChoice)) return userChoice
@@ -989,16 +964,8 @@ function Plugin() {
     parent.postMessage({ pluginMessage: { type: 'get-bulk-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-font-prefs' } }, '*')
     parent.postMessage({ pluginMessage: { type: 'get-style-mappings' } }, '*')
-    parent.postMessage({ pluginMessage: { type: 'get-usage-hint-state' } }, '*')
+    parent.postMessage({ pluginMessage: { type: 'get-refine-threads' } }, '*')
   }, [])
-
-  React.useEffect(() => {
-    pendingUsageActionRef.current = pendingUsageAction
-  }, [pendingUsageAction])
-
-  React.useEffect(() => {
-    hasSeenUsageHintRef.current = hasSeenUsageHint
-  }, [hasSeenUsageHint])
 
   React.useEffect(() => {
     if (page === 'refine') loadRefineContext(true)
@@ -1011,37 +978,49 @@ function Plugin() {
       switch (msg.type) {
         case 'api-key-loaded': {
           const loadedApiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+          const loadedGeminiApiKey = typeof msg.geminiApiKey === 'string' ? msg.geminiApiKey : ''
           setApiKey(loadedApiKey)
           setApiKeyDraft(loadedApiKey)
+          setGeminiApiKey(loadedGeminiApiKey)
+          setGeminiApiKeyDraft(loadedGeminiApiKey)
           setApiKeyLoaded(true)
           break
         }
         case 'api-key-saved': {
           const savedApiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+          const savedGeminiApiKey = typeof msg.geminiApiKey === 'string' ? msg.geminiApiKey : ''
           setApiKey(savedApiKey)
           setApiKeyDraft(savedApiKey)
+          setGeminiApiKey(savedGeminiApiKey)
+          setGeminiApiKeyDraft(savedGeminiApiKey)
           setApiKeyLoaded(true)
           setIsSavingApiKey(false)
           setShowApiKeyValue(false)
-          setPage('translate')
-          if (pendingUsageActionRef.current && !hasSeenUsageHintRef.current) {
-            setShowUsageHintModal(true)
-          } else {
-            setPendingUsageAction(null)
-          }
+          setShowGeminiApiKeyValue(false)
+          setPage(apiKeyReturnPage)
           break
         }
         case 'api-key-cleared':
           setApiKey('')
           setApiKeyDraft('')
+          setGeminiApiKey('')
+          setGeminiApiKeyDraft('')
           setApiKeyLoaded(true)
           setIsSavingApiKey(false)
           setShowApiKeyValue(false)
+          setShowGeminiApiKeyValue(false)
           setPage('apiKey')
+          break
+        case 'refine-threads-loaded':
+          setRefineThreads(msg.threads && typeof msg.threads === 'object' ? msg.threads as Record<string, RefineThreadState> : {})
+          setRefineThreadsLoaded(true)
           break
         case 'translation-started':
           setIsTranslateRunning(true)
           setIsBulkRunning(false)
+          break
+        case 'translate-selection-valid':
+          runTranslate()
           break
         case 'refine-selection-changed':
           if (page === 'refine') {
@@ -1055,8 +1034,11 @@ function Plugin() {
             setRefineSelection(context)
             const nextKey = getRefineThreadKey(context)
             if (!nextKey || !context?.text) {
-              setRefineAnswer('')
+              if (!context?.canRefine) {
+                setRefineAnswer('')
+              }
             } else {
+              setDisplayedRefineThreadKey(nextKey)
               const existingThread = refineThreads[nextKey]
               setRefineAnswer(existingThread?.turns[existingThread.turns.length - 1]?.content || '')
             }
@@ -1071,6 +1053,9 @@ function Plugin() {
             setRefineAnswer(msg.generatedText)
           }
           if (typeof msg.nodeId === 'string' && typeof msg.prompt === 'string' && typeof msg.generatedText === 'string') {
+            const nextPromptIndex = refineThreads[msg.nodeId]?.turns.length ?? 0
+            setDisplayedRefineThreadKey(msg.nodeId)
+            setRefineScrollTarget({ key: msg.nodeId, index: nextPromptIndex })
             setRefineThreads(prev => {
               const threadKey = msg.nodeId
               const current = prev[threadKey] ?? {
@@ -1112,12 +1097,18 @@ function Plugin() {
           break
         case 'translation-complete':
           setIsTranslateRunning(false)
+          setShowTranslationStylePicker(true)
           if (msg.weightMappings && msg.weightMappings.length > 0) {
             setWeightMappingInfo(msg.weightMappings)
             setShowWeightMappings(true)
           }
           break
         case 'translation-error':
+          setIsTranslateRunning(false)
+          setIsBulkRunning(false)
+          if (typeof msg.message === 'string' && msg.message.trim()) {
+            notifyInFigma(msg.message, true)
+          }
           break
         case 'font-swap-started':
           break
@@ -1174,25 +1165,44 @@ function Plugin() {
         case 'style-mappings-saved':
           setStyleMappings(msg.mappings && typeof msg.mappings === 'object' ? msg.mappings : {})
           break
-        case 'usage-hint-state-loaded':
-          setHasSeenUsageHint(Boolean(msg.seen))
-          break
         case 'hard-reset-complete':
+          setRefineThreads({})
+          setRefineAnswer('')
+          setDisplayedRefineThreadKey(null)
+          setRefineScrollTarget(null)
+          break
+        case 'ftux-reset-complete':
           setBulkLanguages(DEFAULT_BULK_LANGUAGES)
           setBulkSetupSelection(DEFAULT_BULK_LANGUAGES)
-          setFontPrefs({})
-          setHasUnsavedFontPrefs(false)
-          setStyleMappings({})
-          setSourceStyles([])
           setAssumeEnglishSource(false)
           setTranslationMode('sarvam-translate')
           setRefinePrompt('')
           setRefineSelection(null)
           setRefineThreads({})
           setRefineAnswer('')
-          setHasSeenUsageHint(false)
-          setShowUsageHintModal(false)
-          setPendingUsageAction(null)
+          setDisplayedRefineThreadKey(null)
+          setRefineScrollTarget(null)
+          setTargetFont('Noto Sans')
+          setFontPrefs({})
+          setAvailableFonts([])
+          setFontsLoading(false)
+          setFontPickerForLang(null)
+          setFontSwapPicker(null)
+          setShowTranslationStylePicker(false)
+          setPage('translate')
+          setApiKey('')
+          setApiKeyDraft('')
+          setGeminiApiKey('')
+          setGeminiApiKeyDraft('')
+          setApiKeyLoaded(true)
+          setIsSavingApiKey(false)
+          setShowApiKeyValue(false)
+          setShowGeminiApiKeyValue(false)
+          setHasUnsavedFontPrefs(false)
+          setStyleMappingModalLang(null)
+          setAvailableStyles([])
+          setSourceStyles([])
+          setStyleMappings({})
           break
       }
     }
@@ -1202,23 +1212,62 @@ function Plugin() {
 
   const activePage = page
   const activeRefineSelectionKey = getRefineThreadKey(refineSelection)
-  const activeRefineThread = activeRefineSelectionKey ? refineThreads[activeRefineSelectionKey] ?? null : null
+  const visibleRefineThreadKey = activeRefineSelectionKey ?? displayedRefineThreadKey
+  const activeRefineThread = visibleRefineThreadKey ? refineThreads[visibleRefineThreadKey] ?? null : null
   const hasActiveRefineThread = Boolean(activeRefineThread && activeRefineThread.turns.length > 0)
   const isApiKeyRequired = activePage === 'apiKey' && !apiKey.trim()
   const trimmedApiKeyDraft = apiKeyDraft.trim()
   const isApiKeyFormatValid = trimmedApiKeyDraft.length === 0 || /^sk_[A-Za-z0-9_]{16,}$/.test(trimmedApiKeyDraft)
+  const trimmedGeminiApiKeyDraft = geminiApiKeyDraft.trim()
+  const isGeminiApiKeyFormatValid = trimmedGeminiApiKeyDraft.length === 0 || /^AIza[0-9A-Za-z_-]{20,}$/.test(trimmedGeminiApiKeyDraft)
+  const hasAnyApiKeyDraft = trimmedApiKeyDraft.length > 0 || trimmedGeminiApiKeyDraft.length > 0
+
+  React.useEffect(() => {
+    if (page !== 'refine') return
+    const viewport = refineScrollRef.current
+    if (!viewport) return
+    const frame = window.requestAnimationFrame(() => {
+      if (
+        refineScrollTarget &&
+        visibleRefineThreadKey &&
+        refineScrollTarget.key === visibleRefineThreadKey
+      ) {
+        const promptMessage = viewport.querySelector(
+          `[data-refine-turn-role="user"][data-refine-turn-index="${refineScrollTarget.index}"]`
+        )
+        if (promptMessage instanceof HTMLElement) {
+          promptMessage.scrollIntoView({ block: 'start', behavior: 'auto' })
+          return
+        }
+      }
+      const latestMessage = viewport.querySelector('[data-refine-message="latest"]')
+      if (latestMessage instanceof HTMLElement) {
+        latestMessage.scrollIntoView({ block: 'start', behavior: 'auto' })
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [page, visibleRefineThreadKey, activeRefineThread?.turns.length, refineScrollTarget])
+
+  React.useEffect(() => {
+    if (!refineThreadsLoaded) return
+    parent.postMessage({ pluginMessage: { type: 'save-refine-threads', threads: refineThreads } }, '*')
+  }, [refineThreads, refineThreadsLoaded])
 
   const handleSaveApiKey = () => {
-    if (!trimmedApiKeyDraft) {
-      notifyInFigma('Please enter your API key to continue.', true)
+    if (!hasAnyApiKeyDraft) {
+      notifyInFigma('Please enter at least one API key to continue.', true)
       return
     }
     if (!isApiKeyFormatValid) {
       notifyInFigma('Please enter a valid Sarvam API key. It should start with sk_.', true)
       return
     }
+    if (trimmedGeminiApiKeyDraft && !isGeminiApiKeyFormatValid) {
+      notifyInFigma('Please enter a valid Gemini API key. It should start with AIza.', true)
+      return
+    }
     setIsSavingApiKey(true)
-    parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey: trimmedApiKeyDraft } }, '*')
+    parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey: trimmedApiKeyDraft, geminiApiKey: trimmedGeminiApiKeyDraft } }, '*')
   }
 
   const runTranslate = () => {
@@ -1231,7 +1280,6 @@ function Plugin() {
       return
     }
     if (isTranslateRunning) return
-    setIsTranslateRunning(true)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
@@ -1241,22 +1289,26 @@ function Plugin() {
 
   const handleTranslate = () => {
     if (!apiKey.trim()) {
-      setPendingUsageAction('translate')
+      setApiKeyReturnPage('translate')
       setApiKeyDraft(apiKey)
       setShowApiKeyValue(false)
       setPage('apiKey')
       return
     }
-    if (!hasSeenUsageHint) {
-      setPendingUsageAction('translate')
-      setShowUsageHintModal(true)
-      return
-    }
-    runTranslate()
+    parent.postMessage({ pluginMessage: { type: 'validate-translate-selection' } }, '*')
   }
 
   const handleRunRefine = () => {
     if (isGeneratingCustomRefine) return
+    if (!geminiApiKey.trim()) {
+      setApiKeyReturnPage('refine')
+      setApiKeyDraft(apiKey)
+      setGeminiApiKeyDraft(geminiApiKey)
+      setShowApiKeyValue(false)
+      setShowGeminiApiKeyValue(false)
+      setPage('apiKey')
+      return
+    }
     if (!refineSelection?.canRefine) {
       loadRefineContext(true)
       notifyInFigma(refineSelection?.message || 'Select one text layer or highlight text to refine.', true)
@@ -1291,7 +1343,6 @@ function Plugin() {
     const activeBulkLanguages = bulkLanguages && bulkLanguages.length > 0
       ? bulkLanguages
       : DEFAULT_BULK_LANGUAGES
-    setIsBulkRunning(true)
     setWeightMappingInfo([])
     setShowWeightMappings(false)
     parent.postMessage({ pluginMessage: {
@@ -1301,30 +1352,13 @@ function Plugin() {
 
   const handleBulkStressTest = () => {
     if (!apiKey.trim()) {
-      setPendingUsageAction('bulk')
+      setApiKeyReturnPage('translate')
       setApiKeyDraft(apiKey)
       setShowApiKeyValue(false)
       setPage('apiKey')
       return
     }
-    if (!hasSeenUsageHint) {
-      setPendingUsageAction('bulk')
-      setShowUsageHintModal(true)
-      return
-    }
     runBulkStressTest()
-  }
-
-  const handleUsageHintContinue = () => {
-    parent.postMessage({ pluginMessage: { type: 'dismiss-usage-hint' } }, '*')
-    setHasSeenUsageHint(true)
-    setShowUsageHintModal(false)
-    setPendingUsageAction(null)
-  }
-
-  const handleUsageHintClose = () => {
-    setShowUsageHintModal(false)
-    setPendingUsageAction(null)
   }
 
   const handleBulkSetupSave = () => {
@@ -1358,6 +1392,9 @@ function Plugin() {
 
   const selectedLanguageLabel =
     languageOptions.find(option => option.value === targetLanguage)?.label || 'Selected language'
+  const selectedTranslationModeLabel =
+    translationModeOptions.find(option => option.value === translationMode)?.label || 'Sarvam'
+  const selectedTranslationModeHelper = translationModeHelperText[translationMode]
 
   const handleSaveFontPrefs = () => {
     parent.postMessage({ pluginMessage: { type: 'save-font-prefs', fontPrefs } }, '*')
@@ -1374,7 +1411,9 @@ function Plugin() {
       value => typeof value === 'string' && value.trim().length > 0 && value !== 'skip'
     )
 
-  const isDedicatedPrefsPage = activePage === 'fontPrefs' || activePage === 'bulkPrefs' || activePage === 'apiKey'
+  const isRefinePage = activePage === 'refine'
+  const isApiKeyPage = activePage === 'apiKey'
+  const isDedicatedPrefsPage = activePage === 'fontPrefs' || activePage === 'bulkPrefs'
 
   if (!apiKeyLoaded) {
     return (
@@ -1393,39 +1432,52 @@ function Plugin() {
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
-      <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none'}`}>
-        <div className={`px-5 py-4 ${isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
-          <div className={isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-4'}>
+      <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage || isRefinePage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none fade-scroll-y'}`}>
+        <div className={`px-5 py-4 ${(isDedicatedPrefsPage || isRefinePage) ? 'flex h-full min-h-0 flex-col' : ''}`}>
+          <div className={(isDedicatedPrefsPage || isRefinePage) ? 'flex min-h-0 flex-1 flex-col' : isApiKeyPage ? 'flex min-h-0 flex-1 flex-col space-y-4 pb-2' : 'space-y-4'}>
             {activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' ? (
-              <div className="space-y-[8px] pt-1">
-                <div className="flex items-end gap-[18px]">
-                  <button
-                    type="button"
-                    onClick={() => setPage('translate')}
-                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
-                      activePage === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
-                    }`}
-                  >
-                    <span>Translate</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage('refine')}
-                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
-                      activePage === 'refine' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
-                    }`}
-                  >
-                    <span>Refine</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage('fontSwap')}
-                    className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
-                      activePage === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
-                    }`}
-                  >
-                    <span>Swap</span>
-                  </button>
+              <div className={isRefinePage ? 'flex min-h-0 flex-1 flex-col space-y-[8px] pt-1' : 'space-y-[8px] pt-1'}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-end gap-[18px]">
+                    <button
+                      type="button"
+                      onClick={() => setPage('translate')}
+                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                        activePage === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                      }`}
+                    >
+                      <span>Translate</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage('refine')}
+                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                        activePage === 'refine' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                      }`}
+                    >
+                      <span>Refine</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage('fontSwap')}
+                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                        activePage === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
+                      }`}
+                    >
+                      <span>Swap</span>
+                    </button>
+                  </div>
+                  {activePage === 'translate' ? (
+                    <button
+                      type="button"
+                      className="flex h-[34px] shrink-0 items-center justify-center px-1 pb-2 text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => setPage('fontPrefs')}
+                      aria-label="Open font preferences"
+                      title="Font preferences"
+                    >
+                      <CaseSensitive className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
                 {activePage === 'translate' ? (
                   <div className="space-y-4">
@@ -1461,71 +1513,18 @@ function Plugin() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Button className="h-9 flex-1 rounded-md text-sm font-medium shadow-sm" disabled={isTranslateRunning} onClick={handleTranslate}>
-                          {isTranslateRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
-                        </Button>
-                        <button
-                          type="button"
-                          className={`flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background shadow-xs transition-colors ${
-                            showTranslationStylePicker
-                              ? 'text-foreground bg-muted'
-                              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                          }`}
-                          onClick={() => setShowTranslationStylePicker(prev => !prev)}
-                          aria-label="Open translation style settings"
-                          title="Translation style"
-                        >
-                          <SlidersHorizontal className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex h-9 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
-                          onClick={() => setPage('fontPrefs')}
-                          aria-label="Open font preferences"
-                          title="Font preferences"
-                        >
-                          <CaseSensitive className="h-4 w-4" />
-                        </button>
+                      <div className="relative flex gap-2">
+                        <div className="flex min-w-0 flex-1 overflow-hidden rounded-md bg-foreground shadow-sm">
+                          <button
+                            type="button"
+                            className="flex h-9 min-w-0 flex-1 items-center justify-center px-4 text-sm font-medium text-background transition-colors hover:bg-[#2a2a2a] disabled:pointer-events-none disabled:opacity-50"
+                            disabled={isTranslateRunning}
+                            onClick={handleTranslate}
+                          >
+                            {isTranslateRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> Translating…</> : `Translate to ${selectedLanguageLabel}`}
+                          </button>
+                        </div>
                       </div>
-                      {showTranslationStylePicker ? (
-                        <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                          <CardContent className="space-y-3 p-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-foreground" />
-                                <h3 className="text-sm font-semibold text-foreground">Translation Style</h3>
-                              </div>
-                            </div>
-                            <Tabs value={translationMode} onValueChange={(value) => setTranslationMode(value as TranslationMode)}>
-                              <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0">
-                                {translationModeOptions.map(option => (
-                                  <TabsTrigger
-                                    key={option.value}
-                                    value={option.value}
-                                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background"
-                                  >
-                                    {option.label}
-                                  </TabsTrigger>
-                                ))}
-                              </TabsList>
-                              {translationModeOptions.map(option => (
-                                <TabsContent key={option.value} value={option.value} className="mt-2">
-                                  <p className="rounded-md border border-dashed border-border/80 bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                                    {option.value === 'sarvam-translate'
-                                      ? 'Uses sarvam-translate:v1 with formal output, wider language coverage, and a longer 2000-character request limit.'
-                                      : option.value === 'formal'
-                                      ? 'Best for polished UI copy, structured product text, and crisp labels.'
-                                      : option.value === 'classic-colloquial'
-                                        ? 'Best when you want more natural everyday phrasing without feeling too casual.'
-                                        : 'Best when you want the output to feel current, light, and conversational.'}
-                                  </p>
-                                </TabsContent>
-                              ))}
-                            </Tabs>
-                          </CardContent>
-                        </Card>
-                      ) : null}
                     </div>
 
                     <div>
@@ -1553,6 +1552,55 @@ function Plugin() {
                       </div>
                     </div>
 
+                    <div className="rounded-lg border border-dashed border-border/90 bg-card/55 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 text-left"
+                          onClick={() => setShowTranslationStylePicker(prev => !prev)}
+                        >
+                          <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="text-[12px] font-medium text-foreground">Translation Style</span>
+                          <span className="inline-flex h-6 items-center rounded-full border border-input bg-muted px-2.5 text-[11px] font-medium text-foreground">
+                            {selectedTranslationModeLabel}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-input bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setShowTranslationStylePicker(prev => !prev)}
+                          aria-label={showTranslationStylePicker ? 'Collapse translation style' : 'Expand translation style'}
+                          title="Translation style"
+                        >
+                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showTranslationStylePicker ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        {selectedTranslationModeHelper}
+                      </p>
+                      {showTranslationStylePicker ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {translationModeOptions.map(option => {
+                            const isActive = translationMode === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setTranslationMode(option.value)}
+                                className={`inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-medium transition-colors ${
+                                  isActive
+                                    ? 'border-input bg-muted text-foreground'
+                                    : 'border-input bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+                                }`}
+                              >
+                                {option.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+
                     {showWeightMappings && weightMappingInfo.length > 0 && (
                       <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
                         <CardContent className="p-3">
@@ -1570,54 +1618,63 @@ function Plugin() {
                     )}
                   </div>
                 ) : activePage === 'refine' ? (
-                  <div className="space-y-4">
-                    <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                      <CardContent className="space-y-3 p-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-foreground" />
-                            <h3 className="text-sm font-semibold text-foreground">Selected Text</h3>
-                          </div>
+                  <div className="-mx-5 flex min-h-0 flex-1 flex-col">
+                    <div ref={refineScrollRef} className="flex-1 space-y-4 overflow-y-auto scrollbar-none fade-scroll-y px-5 pb-4 pt-1">
+                      {activeRefineThread && activeRefineThread.turns.length > 0 ? (
+                        <div className="space-y-3">
+                          {activeRefineThread.turns.map((turn, index) => (
+                            <div
+                              key={`${turn.role}-${index}`}
+                              data-refine-message={index === activeRefineThread.turns.length - 1 ? 'latest' : undefined}
+                              data-refine-turn-index={index}
+                              data-refine-turn-role={turn.role}
+                              className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                              <div
+                                className={`max-w-[92%] rounded-[22px] px-4 py-3 text-sm leading-relaxed shadow-[0_14px_30px_rgba(17,24,39,0.04)] ${
+                                  turn.role === 'user'
+                                    ? 'border border-border/80 bg-[#f3f3f1] text-foreground'
+                                    : 'border border-border/80 bg-card text-foreground'
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap break-words">{turn.content}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        {refineSelection?.canRefine ? (
-                          <div className="space-y-2">
+                      ) : null}
+                    </div>
+
+                    <div className="mt-auto border-t border-border/80 bg-background/95 px-5 pb-2 pt-2 backdrop-blur">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
                             <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                              <span className="rounded-full border border-border bg-muted/40 px-2 py-1">
-                                {refineSelection.kind === 'range' ? 'Highlighted text' : 'Full layer'}
+                              <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
+                                {refineSelection?.canRefine
+                                  ? refineSelection.kind === 'range'
+                                    ? 'Working on selection'
+                                    : 'Working on layer'
+                                  : 'No text selected'}
                               </span>
-                              <span>{refineSelection.charCount} chars</span>
-                              {refineSelection.nodeName ? <span className="truncate">Layer: {refineSelection.nodeName}</span> : null}
+                              {refineSelection?.canRefine ? (
+                                <span className="min-w-0 flex-1 truncate">
+                                  {refineSelection.text}
+                                </span>
+                              ) : null}
                             </div>
-                            <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
-                              {refineSelection.text}
-                            </div>
-                            {refineSelection.kind === 'range' && refineSelection.layerText ? (
-                              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                                Using the full parent layer as supporting context for this conversation.
+                            {!refineSelection?.canRefine && refineSelection?.nodeName ? (
+                              <p className="max-h-10 overflow-hidden text-xs leading-relaxed text-muted-foreground">
+                                {refineSelection.nodeName}
+                              </p>
+                            ) : null}
+                            {!refineSelection?.canRefine && refineSelection?.text ? (
+                              <p className="max-h-10 overflow-hidden text-xs leading-relaxed text-muted-foreground">
+                                {refineSelection.text}
                               </p>
                             ) : null}
                           </div>
-                        ) : (
-                          <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                            {refineSelection?.message || 'Select one text layer or highlight text to refine.'}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card className="rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
-                      <CardContent className="space-y-3 p-4">
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-semibold text-foreground">Refine Chat</h3>
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            Chat with the selected layer. Replies are copy-only and this conversation stays attached to the same text layer.
-                          </p>
-                        </div>
-                        {hasActiveRefineThread ? (
-                          <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-2">
-                            <p className="text-xs leading-relaxed text-muted-foreground">
-                              Follow-up context active. This prompt will remember the last {activeRefineThread?.turns.length} turns for this layer.
-                            </p>
+                          {hasActiveRefineThread ? (
                             <button
                               type="button"
                               className="shrink-0 text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
@@ -1636,84 +1693,40 @@ function Plugin() {
                                 setRefineAnswer('')
                               }}
                             >
-                              Reset context
+                              Reset memory
                             </button>
-                          </div>
-                        ) : null}
-                        <div className="space-y-2">
-                          {activeRefineThread && activeRefineThread.turns.length > 0 ? (
-                            <div className="max-h-56 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y rounded-md border border-border/80 bg-background p-3">
-                              {activeRefineThread.turns.map((turn, index) => (
-                                <div
-                                  key={`${turn.role}-${index}`}
-                                  className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                >
-                                  <div
-                                    className={`max-w-[92%] px-3 py-2 text-sm leading-relaxed ${
-                                      turn.role === 'user'
-                                        ? 'rounded-[18px] bg-[#F1F1F1] text-foreground'
-                                        : 'text-foreground'
-                                    }`}
-                                  >
-                                    <p className="mb-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                                      {turn.role === 'user' ? 'You' : 'Lokal Refine'}
-                                    </p>
-                                    <p className="whitespace-pre-wrap break-words">{turn.content}</p>
-                                    {turn.role === 'assistant' ? (
-                                      <div className="mt-2 flex justify-end">
-                                        <button
-                                          type="button"
-                                          className="text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
-                                          onClick={async () => {
-                                            try {
-                                              await navigator.clipboard.writeText(turn.content)
-                                              notifyInFigma('Refine reply copied.')
-                                            } catch {
-                                              notifyInFigma('Could not copy reply. Please copy it manually.', true)
-                                            }
-                                          }}
-                                        >
-                                          Copy
-                                        </button>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-                              Start the conversation with a prompt. The reply will explain choices and give a best recommendation.
-                            </div>
-                          )}
+                          ) : null}
                         </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium text-muted-foreground">Prompt</Label>
+
+                        <div className="rounded-[22px] border border-border bg-card p-2.5 shadow-[0_16px_32px_rgba(17,24,39,0.06)]">
                           <textarea
                             value={refinePrompt}
                             onChange={event => setRefinePrompt(event.target.value)}
                             onKeyDown={event => {
                               if (event.key === 'Enter' && !event.shiftKey) {
                                 event.preventDefault()
-                                if (!isGeneratingCustomRefine && refineSelection?.canRefine && refinePrompt.trim()) {
+                                if (!isGeneratingCustomRefine && refinePrompt.trim()) {
                                   handleRunRefine()
                                 }
                               }
                             }}
-                            rows={3}
-                            placeholder='Example: Change this to "personal" in Hindi script and explain the best choice.'
-                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/20"
+                            rows={1}
+                            placeholder='Rewrite, shorten, localize, or explain the selected text.'
+                            className="min-h-[60px] w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground"
                           />
+                          <div className="mt-2 flex items-center justify-end pt-2">
+                            <Button
+                              className="h-9 w-9 rounded-full p-0 shadow-sm"
+                              disabled={isGeneratingCustomRefine || !refinePrompt.trim()}
+                              onClick={handleRunRefine}
+                              aria-label="Send refine prompt"
+                            >
+                              {isGeneratingCustomRefine ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                            </Button>
+                          </div>
                         </div>
-                        <Button
-                          className="h-9 w-full rounded-md text-sm font-medium shadow-sm"
-                          disabled={isGeneratingCustomRefine || !refineSelection?.canRefine || !refinePrompt.trim()}
-                          onClick={handleRunRefine}
-                        >
-                          {isGeneratingCustomRefine ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : 'Send'}
-                        </Button>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1748,7 +1761,7 @@ function Plugin() {
                 )}
               </div>
             ) : activePage === 'fontPrefs' ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-4">
+              <div className="space-y-4 pb-4">
                 <div className="flex items-center">
                   <button
                     type="button"
@@ -1904,7 +1917,7 @@ function Plugin() {
                 <div className="space-y-1">
                   <h2 className="text-base font-semibold text-foreground">API Key</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Enter your Sarvam API key to use Lokal Translate.
+                    Enter your Sarvam key for translation and your Gemini key for AI chat with the selected text.
                   </p>
                 </div>
 
@@ -1935,6 +1948,33 @@ function Plugin() {
                           Use a valid Sarvam key format starting with <span className="font-medium">sk_</span>.
                         </p>
                       ) : null}
+
+                      <Separator />
+
+                      <Label className="text-xs font-medium text-muted-foreground">Gemini API key</Label>
+                      <div className="flex gap-2">
+                        <input
+                          type={showGeminiApiKeyValue ? 'text' : 'password'}
+                          value={geminiApiKeyDraft}
+                          onChange={event => setGeminiApiKeyDraft(event.target.value)}
+                          placeholder="AIza..."
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/20"
+                        />
+                        <button
+                          type="button"
+                          className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md border border-input bg-background px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setShowGeminiApiKeyValue(prev => !prev)}
+                        >
+                          {showGeminiApiKeyValue ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                      {!isGeminiApiKeyFormatValid ? (
+                        <p className="text-[11px] text-[#b42318]">
+                          Use a valid Gemini key format starting with <span className="font-medium">AIza</span>.
+                        </p>
+                      ) : null}
                     </div>
                   </CardContent>
                 </Card>
@@ -1943,7 +1983,7 @@ function Plugin() {
                   <Button
                     className="w-full h-9 rounded-md text-sm"
                     onClick={handleSaveApiKey}
-                    disabled={isSavingApiKey || trimmedApiKeyDraft.length === 0 || !isApiKeyFormatValid}
+                    disabled={isSavingApiKey || !hasAnyApiKeyDraft || !isApiKeyFormatValid || !isGeminiApiKeyFormatValid}
                   >
                     {isSavingApiKey ? (
                       <>
@@ -1952,14 +1992,24 @@ function Plugin() {
                       </>
                     ) : apiKey.trim() ? 'Update API key' : 'Save API key'}
                   </Button>
-                  <a
-                    href="https://dashboard.sarvam.ai"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    Create API key (1000 free credits)
-                  </a>
+                  <div className="grid grid-cols-2 gap-2">
+                    <a
+                      href="https://dashboard.sarvam.ai"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                    >
+                      Get Sarvam key
+                    </a>
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                    >
+                      Get Gemini key
+                    </a>
+                  </div>
                 </div>
               </div>
             )}
@@ -1981,18 +2031,25 @@ function Plugin() {
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
 
-            {(activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' || activePage === 'apiKey') ? <BrandingStrip /> : null}
+            {activePage === 'translate' || activePage === 'fontSwap' ? <BrandingStrip /> : null}
           </div>
         </div>
       </div>
       {activePage === 'translate' || activePage === 'refine' ? (
-        <div className="flex items-center gap-4 bg-background px-5 pb-3 pt-2">
+        <div className={`flex items-center gap-4 bg-background px-5 ${activePage === 'refine' ? 'pb-2 pt-1' : 'pb-3 pt-2'}`}>
           <button
             type="button"
             className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
             onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
           >
             Reset Data
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+            onClick={() => parent.postMessage({ pluginMessage: { type: 'ftux-reset' } }, '*')}
+          >
+            Temp Reset
           </button>
           {activePage === 'translate' ? (
             <button
@@ -2005,22 +2062,34 @@ function Plugin() {
               Assume English: {assumeEnglishSource ? 'On' : 'Off'}
             </button>
           ) : null}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+                >
+                  Help
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Rename a layer to{' '}
+                  <span className="font-semibold text-foreground">&quot;dnd&quot;</span> to skip translation and only update font/style, or{' '}
+                  <span className="font-semibold text-foreground">&quot;lma&quot;</span> to leave it untouched.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <button
             type="button"
             className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
             onClick={() => {
-              setPendingUsageAction(null)
-              setShowUsageHintModal(true)
-            }}
-          >
-            Help
-          </button>
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
-            onClick={() => {
+              setApiKeyReturnPage(activePage)
               setApiKeyDraft(apiKey)
+              setGeminiApiKeyDraft(geminiApiKey)
               setShowApiKeyValue(false)
+              setShowGeminiApiKeyValue(false)
               setPage('apiKey')
             }}
           >
@@ -2049,11 +2118,6 @@ function Plugin() {
           setFontSwapPicker(null)
         }}
         loading={fontsLoading}
-      />
-      <UsageHintModal
-        open={showUsageHintModal}
-        onClose={handleUsageHintClose}
-        onContinue={handleUsageHintContinue}
       />
     </div>
   )

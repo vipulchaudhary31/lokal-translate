@@ -15,12 +15,13 @@ const refineWarn: (...args: unknown[]) => void = REFINE_DEBUG ? console.warn.bin
 
 // Sarvam AI API configuration
 const SARVAM_API_KEY_STORAGE_KEY = 'ai-translate-sarvam-api-key'
+const GEMINI_API_KEY_STORAGE_KEY = 'ai-translate-gemini-api-key'
+const REFINE_THREADS_STORAGE_KEY = 'ai-translate-refine-threads'
 const SARVAM_API_URL = 'https://api.sarvam.ai/translate'
 const SARVAM_LANGUAGE_DETECT_URL = 'https://api.sarvam.ai/text-lid'
 const SARVAM_TRANSLITERATE_URL = 'https://api.sarvam.ai/transliterate'
 const SARVAM_CHAT_COMPLETIONS_URL = 'https://api.sarvam.ai/v1/chat/completions'
 const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
-const GEMINI_API_KEY = 'AIzaSyAE4FZQ436xnOtLeKnGwqJGgDeFeIYFlmA'
 const MAYURA_TRANSLATE_MAX_CHARS = 1000
 const SARVAM_TRANSLATE_MAX_CHARS = 2000
 const REFINE_MAX_CHARS = 2000
@@ -40,7 +41,7 @@ const LANGUAGE_CODES: Record<string, string> = {
   'gu': 'gu-IN'
 }
 
-type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial'
+type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial' | 'transliterate'
 type ApiTranslationMode = 'formal' | 'classic-colloquial' | 'modern-colloquial'
 type TranslationRequestConfig = {
   model: 'sarvam-translate:v1' | 'mayura:v1'
@@ -82,6 +83,12 @@ type RefineConversationTurn = {
   role: 'user' | 'assistant'
   content: string
 }
+type RefineThreadState = {
+  selectionKey: string
+  nodeId: string
+  seedText: string
+  turns: RefineConversationTurn[]
+}
 type RefineVariant = {
   label: string
   instruction: string
@@ -110,6 +117,64 @@ const BASE_REFINE_VARIANTS: RefineVariant[] = [
     note: 'More current and conversational',
   },
 ]
+
+function sanitizeRefineThreads(value: unknown): Record<string, RefineThreadState> {
+  if (!value || typeof value !== 'object') return {}
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  const limitedEntries = entries.slice(-40)
+  const sanitized: Record<string, RefineThreadState> = {}
+
+  for (const [key, thread] of limitedEntries) {
+    if (!thread || typeof thread !== 'object') continue
+    const rawThread = thread as Partial<RefineThreadState>
+    const selectionKey = typeof rawThread.selectionKey === 'string' && rawThread.selectionKey.trim()
+      ? rawThread.selectionKey.trim()
+      : key
+    const nodeId = typeof rawThread.nodeId === 'string' ? rawThread.nodeId.trim() : ''
+    if (!nodeId) continue
+    const seedText = typeof rawThread.seedText === 'string' ? rawThread.seedText : ''
+    const turns = Array.isArray(rawThread.turns)
+      ? rawThread.turns
+          .filter(turn =>
+            turn &&
+            typeof turn === 'object' &&
+            (((turn as RefineConversationTurn).role === 'user') || ((turn as RefineConversationTurn).role === 'assistant')) &&
+            typeof (turn as RefineConversationTurn).content === 'string' &&
+            (turn as RefineConversationTurn).content.trim().length > 0
+          )
+          .slice(-20)
+          .map(turn => ({
+            role: (turn as RefineConversationTurn).role,
+            content: (turn as RefineConversationTurn).content.trim(),
+          }))
+      : []
+
+    sanitized[selectionKey] = {
+      selectionKey,
+      nodeId,
+      seedText,
+      turns,
+    }
+  }
+
+  return sanitized
+}
+
+async function loadRefineThreads(): Promise<Record<string, RefineThreadState>> {
+  try {
+    const saved = await figma.clientStorage.getAsync(REFINE_THREADS_STORAGE_KEY)
+    return sanitizeRefineThreads(saved)
+  } catch {
+    return {}
+  }
+}
+
+async function saveRefineThreads(threads: unknown): Promise<Record<string, RefineThreadState>> {
+  const sanitized = sanitizeRefineThreads(threads)
+  await figma.clientStorage.setAsync(REFINE_THREADS_STORAGE_KEY, sanitized)
+  return sanitized
+}
 
 // Any node with children can contain text - support frames, groups, sections, components, instances,
 // component sets, boolean ops, slides, etc. Works for whatever the user selects.
@@ -157,6 +222,15 @@ class TranslationRestyleError extends Error {
 }
 
 function getTranslationConfig(mode: TranslationMode): TranslationRequestConfig {
+  if (mode === 'transliterate') {
+    return {
+      model: 'sarvam-translate:v1',
+      mode: 'formal',
+      maxChars: 1000,
+      modelLabel: 'Sarvam Transliterate',
+    }
+  }
+
   if (mode === 'sarvam-translate') {
     return {
       model: 'sarvam-translate:v1',
@@ -198,6 +272,7 @@ function getTranslationStyleLabel(mode: TranslationMode): string {
   if (mode === 'sarvam-translate') return 'Sarvam'
   if (mode === 'formal') return 'Formal'
   if (mode === 'classic-colloquial') return 'Classic'
+  if (mode === 'transliterate') return 'Transliterate'
   return 'Modern'
 }
 
@@ -693,6 +768,7 @@ let availableFontFamiliesCache: string[] | null = null
 let availableFontFamiliesPromise: Promise<string[]> | null = null
 const libraryTextStyleCache = new Map<string, Promise<TextStyle | null>>()
 let sarvamApiKeyCache: string | null | undefined = undefined
+let geminiApiKeyCache: string | null | undefined = undefined
 
 function fontCacheKey(font: FontName): string {
   return `${font.family}__${font.style}`
@@ -797,8 +873,26 @@ async function requireSarvamApiKey(): Promise<string> {
   return apiKey
 }
 
+async function loadGeminiApiKey(): Promise<string> {
+  if (geminiApiKeyCache !== undefined) return geminiApiKeyCache ?? ''
+  try {
+    const saved = await figma.clientStorage.getAsync(GEMINI_API_KEY_STORAGE_KEY)
+    geminiApiKeyCache = typeof saved === 'string' ? saved.trim() : ''
+  } catch {
+    geminiApiKeyCache = ''
+  }
+  return geminiApiKeyCache
+}
+
+async function saveGeminiApiKey(apiKey: string): Promise<string> {
+  const normalized = apiKey.trim()
+  await figma.clientStorage.setAsync(GEMINI_API_KEY_STORAGE_KEY, normalized)
+  geminiApiKeyCache = normalized
+  return normalized
+}
+
 async function requireGeminiApiKey(): Promise<string> {
-  const apiKey = GEMINI_API_KEY.trim()
+  const apiKey = await loadGeminiApiKey()
   if (!apiKey) throw new Error('Please add your Gemini API key to use Refine.')
   return apiKey
 }
@@ -1300,7 +1394,7 @@ async function translateWithStyledSegments(
     const coreText = match?.[2] || ''
     const trailingWhitespace = match?.[3] || ''
     const translatedCore = coreText.trim().length > 0
-      ? await translateText(coreText, targetLang, sourceLanguage, session, mode)
+      ? await transformTextForMode(coreText, targetLang, sourceLanguage, session, mode)
       : coreText
     const t = `${leadingWhitespace}${translatedCore}${trailingWhitespace}`
     if (!t) return { success: false, weightMappings: [], wasMixed }
@@ -2032,7 +2126,7 @@ function getApiErrorMessage(error: unknown, apiName: string): string {
       return `Network error: Cannot reach the ${apiName} API. Check your internet connection and firewall.`
     }
     if (msg.includes('invalid_api_key') || msg.includes('403') || msg.includes('Forbidden')) {
-      return `API key invalid or expired. Check your ${apiName} API key in the plugin.`
+      return `Credentials invalid or expired for ${apiName}. Update the backend environment and try again.`
     }
     if (msg.includes('insufficient_quota') || msg.includes('429') || msg.includes('rate limit')) {
       return 'Rate limit or quota exceeded. Wait a minute and try again.'
@@ -2256,6 +2350,21 @@ async function translateText(
     console.error('Translation API error:', msg, error)
     throw new Error(msg)
   }
+}
+
+async function transformTextForMode(
+  text: string,
+  targetLanguage: string,
+  sourceLanguage: string | undefined,
+  session: SessionCache,
+  mode: TranslationMode
+): Promise<string> {
+  if (mode === 'transliterate') {
+    const actualSourceLanguage = await resolveActualSourceLanguage(text, sourceLanguage, session)
+    return await transliterateText(text, actualSourceLanguage, targetLanguage, session)
+  }
+
+  return await translateText(text, targetLanguage, sourceLanguage, session, mode)
 }
 
 // Define our standard text styles
@@ -2841,7 +2950,7 @@ async function translateSelectedRange(
   const segments = node.getStyledTextSegments([...STYLE_FIELDS])
 
   // 2. Translate the selection
-  const translated = await translateText(selected, targetLanguage, sourceLanguage, session, mode)
+  const translated = await transformTextForMode(selected, targetLanguage, sourceLanguage, session, mode)
   const cleaned    = translated ? cleanupTranslation(translated) : ''
   const replacement = cleaned && cleaned.trim().length > 0 ? cleaned : selected // keep original on empty result
 
@@ -3069,15 +3178,40 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'refine-error', scope: 'apply', message: errMsg })
       figma.notify(errMsg, { error: true })
     }
+  } else if (msg.type === 'validate-translate-selection') {
+    try {
+      const selectedRange = await getActiveSelectedTextRange()
+      if (selectedRange) {
+        figma.ui.postMessage({ type: 'translate-selection-valid' })
+        return
+      }
+
+      const selection = figma.currentPage.selection
+      const containers = selection.filter(node => isContainerNode(node))
+      const textLayers = selection.filter(node => node.type === 'TEXT') as TextNode[]
+
+      if (containers.length === 0 && textLayers.length === 0) {
+        const message = 'Please select one or more layers or text to translate'
+        figma.ui.postMessage({ type: 'translation-error', message })
+        figma.notify(message, { error: true })
+        return
+      }
+
+      figma.ui.postMessage({ type: 'translate-selection-valid' })
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Translate validation')
+      figma.ui.postMessage({ type: 'translation-error', message })
+      figma.notify(message, { error: true })
+    }
   } else if (msg.type === 'translate') {
     try {
-      await requireSarvamApiKey()
       await loadFontPrefs()
       await reloadStyleMappings()
       const translationMode: TranslationMode = msg.translationMode === 'sarvam-translate'
         || msg.translationMode === 'formal'
         || msg.translationMode === 'classic-colloquial'
         || msg.translationMode === 'modern-colloquial'
+        || msg.translationMode === 'transliterate'
         ? msg.translationMode
         : 'sarvam-translate'
       const translationConfig = getTranslationConfig(translationMode)
@@ -3172,7 +3306,7 @@ figma.ui.onmessage = async (msg) => {
 
       if (containers.length === 0 && textLayers.length === 0) {
         figma.ui.postMessage({ 
-          type: 'error', 
+          type: 'translation-error', 
           message: 'Please select one or more layers or text to translate' 
         })
         figma.notify('Please select one or more layers or text to translate', { error: true })
@@ -3180,26 +3314,22 @@ figma.ui.onmessage = async (msg) => {
       }
       
       // Find all text nodes and check their processing type
-      const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}> = []
+      const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'lma'}> = []
       
       // Process text nodes from containers (frame, group, section, component, instance)
-      // Only check dnd/hing within the selected container - not in external ancestors
+      // Only check dnd within the selected container - not in external ancestors
       containers.forEach(container => {
         container.findAll(node => node.type === 'TEXT').forEach(textNode => {
           const textElement = textNode as TextNode
           const text = textElement.characters.trim()
           if (text.length > 0) {
             const isLma = isLmaNode(textElement)
-            const isHing = !isLma && isHingNode(textElement, container)
-            const isDnd = !isLma && !isHing && isDndNode(textElement, container)
+            const isDnd = !isLma && isDndNode(textElement, container)
             
-            let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+            let nodeType: 'translate' | 'dnd' | 'lma' = 'translate'
             if (isLma) {
               nodeType = 'lma'
               debugLog('Found LMA text node for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
-            } else if (isHing) {
-              nodeType = 'hing'
-              debugLog('Found Hing text node for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
             } else if (isDnd) {
               nodeType = 'dnd'
               debugLog('Found DND text node for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
@@ -3217,21 +3347,17 @@ figma.ui.onmessage = async (msg) => {
       })
       
       // Process directly selected text layers
-      // User explicitly selected these - only check dnd/hing within the node itself (not external ancestors)
+      // User explicitly selected these - only check dnd within the node itself (not external ancestors)
       textLayers.forEach(textLayer => {
         const text = textLayer.characters.trim()
         if (text.length > 0) {
           const isLma = isLmaNode(textLayer)
-          const isHing = !isLma && isHingNode(textLayer, textLayer)
-          const isDnd = !isLma && !isHing && isDndNode(textLayer, textLayer)
+          const isDnd = !isLma && isDndNode(textLayer, textLayer)
           
-          let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+          let nodeType: 'translate' | 'dnd' | 'lma' = 'translate'
           if (isLma) {
             nodeType = 'lma'
             debugLog('Found selected LMA text layer for full skip:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
-          } else if (isHing) {
-            nodeType = 'hing'
-            debugLog('Found selected Hing text layer for transliteration:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
           } else if (isDnd) {
             nodeType = 'dnd'
             debugLog('Found selected DND text layer for font update:', text.substring(0, 100) + (text.length > 100 ? '...' : ''))
@@ -3295,7 +3421,6 @@ figma.ui.onmessage = async (msg) => {
           // Update progress
           let action = 'Processing'
           if (type === 'translate') action = 'Translating'
-          else if (type === 'hing') action = 'Transliterating'
           else if (type === 'dnd') action = 'Preserving text + applying font/style (DND)'
           else if (type === 'lma') action = 'Skipping (LMA)'
           
@@ -3311,38 +3436,7 @@ figma.ui.onmessage = async (msg) => {
             await loadAllFontsForTextNode(node)
           }
           
-          if (type === 'hing') {
-            const transliteratedText = await transliterateText(originalText, 'en', msg.targetLanguage, session)
-            
-            if (transliteratedText && transliteratedText.trim().length > 0) {
-              const actuallyChanged = transliteratedText !== originalText
-              if (actuallyChanged) {
-                // Apply font BEFORE setting characters (Figma requires font to support the script)
-                const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
-                if (!applied) {
-                  const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
-                  if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
-                }
-                node.characters = transliteratedText
-                translatedCount++
-                debugLog(`✅ Transliterated and font updated: "${originalText.substring(0, 30)}..." → "${transliteratedText.substring(0, 30)}..."`)
-              } else {
-                // Text unchanged but still apply font/style per preference (e.g. number-only text)
-                const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
-                if (!applied) {
-                  const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
-                  if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
-                }
-                translatedCount++
-                debugLog(`⏭️ No transliteration change; applied font/style: "${originalText.substring(0, 30)}..."`)
-              }
-            } else {
-              const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
-              if (!applied) await applyFontToTextNode(node, msg.targetLanguage)
-              translatedCount++
-              debugLog(`⏭️ Empty transliteration; font applied for "${originalText.substring(0, 30)}..."`)
-            }
-          } else if (type === 'dnd') {
+          if (type === 'dnd') {
             // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
             const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
             if (!applied) {
@@ -3423,7 +3517,7 @@ figma.ui.onmessage = async (msg) => {
               translatedCount++
               debugLog(`✅ Translated with preserved styles: "${originalText.substring(0, 30)}..."`)
             } else {
-              const translatedText = await translateText(
+              const translatedText = await transformTextForMode(
                 sourceTextForTranslation,
                 msg.targetLanguage,
                 sourceLanguageForTranslation,
@@ -3530,12 +3624,12 @@ figma.ui.onmessage = async (msg) => {
     }
   } else if (msg.type === 'bulk-translate-all') {
     try {
-      await requireSarvamApiKey()
       await loadFontPrefs()
       const translationMode: TranslationMode = msg.translationMode === 'sarvam-translate'
         || msg.translationMode === 'formal'
         || msg.translationMode === 'classic-colloquial'
         || msg.translationMode === 'modern-colloquial'
+        || msg.translationMode === 'transliterate'
         ? msg.translationMode
         : 'sarvam-translate'
       const translationConfig = getTranslationConfig(translationMode)
@@ -3581,7 +3675,7 @@ figma.ui.onmessage = async (msg) => {
       const allCreatedFrames: SceneNode[] = []
       
       // Pre-compute text types from ORIGINAL items (containers + text layers) before cloning
-      const typesByFrame: Array<Array<{path: number[], originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}>> = []
+      const typesByFrame: Array<Array<{path: number[], originalText: string, type: 'translate' | 'dnd' | 'lma'}>> = []
       for (const item of itemsToBulk) {
         const root = item
         const textWithPath = item.type === 'TEXT'
@@ -3591,19 +3685,16 @@ figma.ui.onmessage = async (msg) => {
           : collectTextNodesWithPath(root, [])
         const items = textWithPath.map(({ path, text, node }) => {
           const isLma = isLmaNode(node)
-          const isHing = !isLma && isHingNode(node, root)
-          const isDnd = !isLma && !isHing && isDndNode(node, root)
-          let nodeType: 'translate' | 'dnd' | 'hing' | 'lma' = 'translate'
+          const isDnd = !isLma && isDndNode(node, root)
+          let nodeType: 'translate' | 'dnd' | 'lma' = 'translate'
           if (isLma) nodeType = 'lma'
-          else if (isHing) nodeType = 'hing'
           else if (isDnd) nodeType = 'dnd'
           return { path, originalText: text, type: nodeType }
         })
         const oversizedItem = textWithPath.find(({ text, node }) => {
           const isLma = isLmaNode(node)
-          const isHing = !isLma && isHingNode(node, root)
-          const isDnd = !isLma && !isHing && isDndNode(node, root)
-          return !isLma && !isHing && !isDnd && text.trim().length > translationConfig.maxChars
+          const isDnd = !isLma && isDndNode(node, root)
+          return !isLma && !isDnd && text.trim().length > translationConfig.maxChars
         })
         if (oversizedItem) {
           const message = getTranslateLimitMessage(translationConfig, getNodeLocation(oversizedItem.node), oversizedItem.text.trim().length)
@@ -3640,11 +3731,11 @@ figma.ui.onmessage = async (msg) => {
         }
         
         // Build text nodes from clones, matched by path to pre-computed types
-        const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'hing' | 'lma'}> = []
+        const textNodes: Array<{node: TextNode, originalText: string, type: 'translate' | 'dnd' | 'lma'}> = []
         for (let fIdx = 0; fIdx < clonedContainers.length; fIdx++) {
           const cloned = clonedContainers[fIdx]
           const typeItems = typesByFrame[fIdx] || []
-          const typeByPath = new Map<string, 'translate' | 'dnd' | 'hing' | 'lma'>()
+          const typeByPath = new Map<string, 'translate' | 'dnd' | 'lma'>()
           typeItems.forEach(t => typeByPath.set(JSON.stringify(t.path), t.type))
           const cloneTextWithPath = collectTextNodesWithPath(cloned, [])
           for (const { path, text, node } of cloneTextWithPath) {
@@ -3662,18 +3753,7 @@ figma.ui.onmessage = async (msg) => {
           const { node, originalText, type } = textNodes[i]
           const bulkSourceStyleBefore = (type === 'translate' || type === 'dnd') ? getSourceStyleFromNode(node) : null
           try {
-            if (type === 'hing') {
-              await loadAllFontsForTextNode(node)
-              const transliterated = await transliterateText(originalText, 'en', targetLang, bulkSession)
-              if (transliterated?.trim() && transliterated !== originalText) {
-                const applied = await applyUserDefinedStyleMapping(node, targetLang)
-                if (!applied) await applyFontToTextNode(node, targetLang)
-                node.characters = transliterated
-              } else if (transliterated?.trim()) {
-                const applied = await applyUserDefinedStyleMapping(node, targetLang)
-                if (!applied) await applyFontToTextNode(node, targetLang)
-              }
-            } else if (type === 'dnd') {
+            if (type === 'dnd') {
               await loadAllFontsForTextNode(node)
               // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
               const applied = await applyUserDefinedStyleMapping(node, targetLang, bulkSourceStyleBefore)
@@ -3685,7 +3765,7 @@ figma.ui.onmessage = async (msg) => {
               const actualSourceLanguage = await resolveActualSourceLanguage(originalText, sourceLanguage, bulkSession)
               const segmentResult = await translateWithStyledSegments(node, targetLang, sourceLanguage, bulkSession, translationMode)
               if (!segmentResult.success) {
-                const translated = await translateText(originalText, targetLang, sourceLanguage, bulkSession, translationMode)
+                const translated = await transformTextForMode(originalText, targetLang, sourceLanguage, bulkSession, translationMode)
                 if (translated?.trim() && translated !== originalText) {
                   const applied = await applyUserDefinedStyleMapping(node, targetLang)
                   if (!applied) await applyFontToTextNode(node, targetLang)
@@ -3914,27 +3994,47 @@ figma.ui.onmessage = async (msg) => {
   } else if (msg.type === 'get-api-key') {
     try {
       const apiKey = await loadSarvamApiKey()
-      figma.ui.postMessage({ type: 'api-key-loaded', apiKey })
+      const geminiApiKey = await loadGeminiApiKey()
+      figma.ui.postMessage({ type: 'api-key-loaded', apiKey, geminiApiKey })
     } catch {
-      figma.ui.postMessage({ type: 'api-key-loaded', apiKey: '' })
+      figma.ui.postMessage({ type: 'api-key-loaded', apiKey: '', geminiApiKey: '' })
     }
     return
   } else if (msg.type === 'save-api-key') {
     try {
       const apiKey = typeof msg.apiKey === 'string' ? msg.apiKey : ''
+      const geminiApiKey = typeof msg.geminiApiKey === 'string' ? msg.geminiApiKey : ''
       const savedKey = await saveSarvamApiKey(apiKey)
-      figma.ui.postMessage({ type: 'api-key-saved', apiKey: savedKey })
-      figma.notify('API key saved')
+      const savedGeminiKey = await saveGeminiApiKey(geminiApiKey)
+      figma.ui.postMessage({ type: 'api-key-saved', apiKey: savedKey, geminiApiKey: savedGeminiKey })
+      figma.notify('API keys saved')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save API key'
       figma.ui.postMessage({ type: 'error', message })
       figma.notify(message, { error: true })
     }
     return
+  } else if (msg.type === 'get-refine-threads') {
+    try {
+      const threads = await loadRefineThreads()
+      figma.ui.postMessage({ type: 'refine-threads-loaded', threads })
+    } catch {
+      figma.ui.postMessage({ type: 'refine-threads-loaded', threads: {} })
+    }
+    return
+  } else if (msg.type === 'save-refine-threads') {
+    try {
+      await saveRefineThreads(msg.threads)
+    } catch {
+      figma.ui.postMessage({ type: 'error', message: 'Failed to save refine history' })
+    }
+    return
   } else if (msg.type === 'clear-api-key-test') {
     try {
       await figma.clientStorage.deleteAsync(SARVAM_API_KEY_STORAGE_KEY)
+      await figma.clientStorage.deleteAsync(GEMINI_API_KEY_STORAGE_KEY)
       sarvamApiKeyCache = ''
+      geminiApiKeyCache = ''
       figma.ui.postMessage({ type: 'api-key-cleared' })
       figma.notify('API key cleared for testing')
     } catch {
@@ -4016,19 +4116,44 @@ figma.ui.onmessage = async (msg) => {
     return
   } else if (msg.type === 'hard-reset') {
     try {
-      await figma.clientStorage.deleteAsync('ai-translate-bulk-languages')
-      await figma.clientStorage.deleteAsync(FONT_PREFS_KEY)
-      await figma.clientStorage.deleteAsync(STYLE_MAPPINGS_KEY)
-      await figma.clientStorage.deleteAsync(USAGE_HINT_SEEN_KEY)
-      fontPrefsCache = {}
-      styleMappingsCache = null
       const keys = await figma.clientStorage.keysAsync()
-      const ourKeys = keys.filter(k => k.startsWith(CACHE_PREFIX + ':'))
+      const ourKeys = keys.filter(k => k.startsWith(CACHE_PREFIX + ':') || k === REFINE_THREADS_STORAGE_KEY)
       for (const k of ourKeys) await figma.clientStorage.deleteAsync(k)
       figma.ui.postMessage({ type: 'hard-reset-complete' })
-      figma.notify('Hard reset complete: all preferences & cache cleared')
+      figma.notify(`Cleared ${ourKeys.length} cached translation entries`)
     } catch (e) {
       figma.ui.postMessage({ type: 'error', message: 'Hard reset failed' })
+    }
+    return
+  } else if (msg.type === 'ftux-reset') {
+    try {
+      const keys = await figma.clientStorage.keysAsync()
+      const cacheKeys = keys.filter(k => k.startsWith(CACHE_PREFIX + ':'))
+      const resetKeys = [
+        ...cacheKeys,
+        REFINE_THREADS_STORAGE_KEY,
+        SARVAM_API_KEY_STORAGE_KEY,
+        GEMINI_API_KEY_STORAGE_KEY,
+        'ai-translate-bulk-languages',
+        FONT_PREFS_KEY,
+        STYLE_MAPPINGS_KEY,
+        USAGE_HINT_SEEN_KEY,
+      ]
+
+      for (const key of Array.from(new Set(resetKeys))) {
+        await figma.clientStorage.deleteAsync(key)
+      }
+
+      sarvamApiKeyCache = ''
+      geminiApiKeyCache = ''
+      fontPrefsCache = {}
+      styleMappingsCache = null
+
+      figma.ui.postMessage({ type: 'ftux-reset-complete' })
+      figma.notify('FTUX reset complete: preferences, API keys, history, and cache cleared')
+    } catch (e) {
+      figma.ui.postMessage({ type: 'error', message: 'FTUX reset failed' })
+      figma.notify('FTUX reset failed', { error: true })
     }
     return
   } else if (msg.type === 'font-swap') {

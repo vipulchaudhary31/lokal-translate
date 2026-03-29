@@ -117,6 +117,7 @@ declare const styles: {
   readonly "[transform:translateZ(0)]": string;
   readonly "absolute": string;
   readonly "active:bg-sidebar-accent": string;
+  readonly "active:cursor-grabbing": string;
   readonly "active:scale-[0.98]": string;
   readonly "active:shadow-none": string;
   readonly "active:text-sidebar-accent-foreground": string;
@@ -146,18 +147,22 @@ declare const styles: {
   readonly "aspect-square": string;
   readonly "aspect-video": string;
   readonly "auto-rows-min": string;
+  readonly "backdrop-blur": string;
   readonly "basis-full": string;
   readonly "bg-(--color-bg)": string;
   readonly "bg-[##2c2c2c]": string;
   readonly "bg-[#1f9d55]": string;
+  readonly "bg-[#1f9d55]/8": string;
   readonly "bg-[#2c2c2c]": string;
   readonly "bg-[#D88A1F]": string;
   readonly "bg-[#F1F1F1]": string;
   readonly "bg-[#F78430]": string;
   readonly "bg-[#FCFBF8]": string;
   readonly "bg-[#FD5C04]": string;
+  readonly "bg-[#b42318]/5": string;
   readonly "bg-[#bf4e30]": string;
   readonly "bg-[#e8e8e8]": string;
+  readonly "bg-[#f3f3f1]": string;
   readonly "bg-[#f5f5f5]": string;
   readonly "bg-[#f78430]": string;
   readonly "bg-[linear-gradient(180deg,#dce8f7_0%,#f3efdf_68%,#e7d7be_100%)]": string;
@@ -171,11 +176,14 @@ declare const styles: {
   readonly "bg-accent/12": string;
   readonly "bg-accent/15": string;
   readonly "bg-background": string;
+  readonly "bg-background/95": string;
   readonly "bg-black/45": string;
   readonly "bg-black/50": string;
   readonly "bg-black/55": string;
   readonly "bg-border": string;
+  readonly "bg-border/80": string;
   readonly "bg-card": string;
+  readonly "bg-card/55": string;
   readonly "bg-center": string;
   readonly "bg-cover": string;
   readonly "bg-destructive": string;
@@ -189,6 +197,7 @@ declare const styles: {
   readonly "bg-muted/20": string;
   readonly "bg-muted/30": string;
   readonly "bg-muted/40": string;
+  readonly "bg-muted/45": string;
   readonly "bg-muted/50": string;
   readonly "bg-muted/60": string;
   readonly "bg-muted/70": string;
@@ -215,7 +224,9 @@ declare const styles: {
   readonly "border-(--color-border)": string;
   readonly "border-0": string;
   readonly "border-2": string;
+  readonly "border-[#1f9d55]/30": string;
   readonly "border-[#FD5C04]": string;
+  readonly "border-[#b42318]/20": string;
   readonly "border-[#dddddd]": string;
   readonly "border-[#e8e8e8]": string;
   readonly "border-[#f0f0f0]": string;
@@ -227,6 +238,7 @@ declare const styles: {
   readonly "border-border": string;
   readonly "border-border/50": string;
   readonly "border-border/80": string;
+  readonly "border-border/90": string;
   readonly "border-collapse": string;
   readonly "border-dashed": string;
   readonly "border-destructive/20": string;
@@ -247,11 +259,15 @@ declare const styles: {
   readonly "border-t": string;
   readonly "border-t-transparent": string;
   readonly "border-transparent": string;
+  readonly "border-white/12": string;
   readonly "border-x": string;
   readonly "border-y": string;
   readonly "bottom-0": string;
   readonly "bottom-1": string;
+  readonly "bottom-2.5": string;
+  readonly "bottom-3": string;
   readonly "bottom-[-0.5px]": string;
+  readonly "bottom-[calc(100%+8px)]": string;
   readonly "break-words": string;
   readonly "caption-bottom": string;
   readonly "col-start-2": string;
@@ -261,6 +277,7 @@ declare const styles: {
   readonly "content-stretch": string;
   readonly "contents": string;
   readonly "cursor-default": string;
+  readonly "cursor-grab": string;
   readonly "cursor-not-allowed": string;
   readonly "cursor-pointer": string;
   readonly "dark": string;
@@ -344,6 +361,7 @@ declare const styles: {
   readonly "data-[state=active]:bg-background": string;
   readonly "data-[state=active]:bg-card": string;
   readonly "data-[state=active]:bg-foreground": string;
+  readonly "data-[state=active]:bg-muted": string;
   readonly "data-[state=active]:border-2": string;
   readonly "data-[state=active]:border-foreground": string;
   readonly "data-[state=active]:font-bold": string;
@@ -569,6 +587,7 @@ declare const styles: {
   readonly "group-focus-within/menu-item:opacity-100": string;
   readonly "group-has-data-[sidebar=menu-action]/menu-item:pr-8": string;
   readonly "group-hover/menu-item:opacity-100": string;
+  readonly "group-hover:opacity-100": string;
   readonly "group/drawer-content": string;
   readonly "group/menu-item": string;
   readonly "group/navigation-menu": string;
@@ -807,6 +826,7 @@ declare const styles: {
   readonly "h-[32.295px]": string;
   readonly "h-[33.436px]": string;
   readonly "h-[33.528px]": string;
+  readonly "h-[34px]": string;
   readonly "h-[35.092px]": string;
   readonly "h-[35.323px]": string;
   readonly "h-[39.122px]": string;
@@ -933,6 +953,7 @@ declare const styles: {
   readonly "hidden": string;
   readonly "hover:-translate-y-[1px]": string;
   readonly "hover:after:bg-sidebar-border": string;
+  readonly "hover:bg-[#2a2a2a]": string;
   readonly "hover:bg-[#ebebeb]": string;
   readonly "hover:bg-accent": string;
   readonly "hover:bg-accent/15": string;
@@ -1463,6 +1484,7 @@ declare const styles: {
   readonly "inset-[94.13%_18.5%_0.1%_19%]": string;
   readonly "inset-[94.13%_18.5%_0.1%_19.01%]": string;
   readonly "inset-x-0": string;
+  readonly "inset-x-3": string;
   readonly "inset-y-0": string;
   readonly "invisible": string;
   readonly "isolate": string;
@@ -1972,6 +1994,7 @@ declare const styles: {
   readonly "max-h-(--radix-context-menu-content-available-height)": string;
   readonly "max-h-(--radix-dropdown-menu-content-available-height)": string;
   readonly "max-h-(--radix-select-content-available-height)": string;
+  readonly "max-h-10": string;
   readonly "max-h-20": string;
   readonly "max-h-32": string;
   readonly "max-h-40": string;
@@ -1994,6 +2017,7 @@ declare const styles: {
   readonly "max-h-[86vh]": string;
   readonly "max-h-[88vh]": string;
   readonly "max-w-(--skeleton-width)": string;
+  readonly "max-w-[240px]": string;
   readonly "max-w-[520px]": string;
   readonly "max-w-[62px]": string;
   readonly "max-w-[64px]": string;
@@ -2027,9 +2051,12 @@ declare const styles: {
   readonly "min-h-0": string;
   readonly "min-h-16": string;
   readonly "min-h-4": string;
+  readonly "min-h-[120px]": string;
   readonly "min-h-[52px]": string;
   readonly "min-h-[56px]": string;
+  readonly "min-h-[60px]": string;
   readonly "min-h-[64px]": string;
+  readonly "min-h-[calc(100vh-170px)]": string;
   readonly "min-h-full": string;
   readonly "min-h-px": string;
   readonly "min-h-svh": string;
@@ -2070,6 +2097,7 @@ declare const styles: {
   readonly "object-center": string;
   readonly "object-contain": string;
   readonly "object-cover": string;
+  readonly "opacity-0": string;
   readonly "opacity-40": string;
   readonly "opacity-50": string;
   readonly "opacity-61": string;
@@ -2105,9 +2133,12 @@ declare const styles: {
   readonly "p-px": string;
   readonly "pb-0": string;
   readonly "pb-1": string;
+  readonly "pb-12": string;
+  readonly "pb-16": string;
   readonly "pb-2": string;
   readonly "pb-3": string;
   readonly "pb-4": string;
+  readonly "pb-40": string;
   readonly "pb-6": string;
   readonly "pb-7": string;
   readonly "pb-[4px]": string;
@@ -2128,8 +2159,11 @@ declare const styles: {
   readonly "placeholder:text-muted-foreground": string;
   readonly "pointer-events-none": string;
   readonly "pr-1": string;
+  readonly "pr-16": string;
   readonly "pr-2": string;
   readonly "pr-2.5": string;
+  readonly "pr-20": string;
+  readonly "pr-28": string;
   readonly "pr-6": string;
   readonly "pr-8": string;
   readonly "pt-0": string;
@@ -2185,6 +2219,7 @@ declare const styles: {
   readonly "right-1": string;
   readonly "right-1.5": string;
   readonly "right-2": string;
+  readonly "right-2.5": string;
   readonly "right-3": string;
   readonly "right-4": string;
   readonly "right-[10.31px]": string;
@@ -2669,6 +2704,7 @@ declare const styles: {
   readonly "rounded-[10px]": string;
   readonly "rounded-[14px]": string;
   readonly "rounded-[18px]": string;
+  readonly "rounded-[22px]": string;
   readonly "rounded-[2px]": string;
   readonly "rounded-[4px]": string;
   readonly "rounded-[8.75px]": string;
@@ -2707,12 +2743,17 @@ declare const styles: {
   readonly "shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_12px_26px_rgba(17,24,39,0.06),0_2px_8px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_12px_28px_rgba(17,24,39,0.04),0_2px_8px_rgba(17,24,39,0.02)]": string;
+  readonly "shadow-[0_12px_28px_rgba(17,24,39,0.08),0_4px_12px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_12px_28px_rgba(17,24,39,0.10),0_4px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "shadow-[0_14px_30px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_14px_30px_rgba(17,24,39,0.05),0_3px_10px_rgba(17,24,39,0.03)]": string;
+  readonly "shadow-[0_14px_30px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[0_14px_34px_rgba(17,24,39,0.08),0_3px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "shadow-[0_16px_32px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_18px_34px_rgba(17,24,39,0.12),0_4px_12px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_20px_42px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.025)]": string;
   readonly "shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
+  readonly "shadow-[0_20px_44px_rgba(17,24,39,0.08),0_6px_18px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[0_20px_44px_rgba(17,24,39,0.12),0_6px_18px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_22px_46px_rgba(17,24,39,0.05),0_8px_20px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_24px_80px_rgba(0,0,0,0.28)]": string;
@@ -2796,6 +2837,7 @@ declare const styles: {
   readonly "text-[16px]": string;
   readonly "text-[20px]": string;
   readonly "text-[21px]": string;
+  readonly "text-[22px]": string;
   readonly "text-[24px]": string;
   readonly "text-[28px]": string;
   readonly "text-[32px]": string;
@@ -2806,6 +2848,7 @@ declare const styles: {
   readonly "text-accent": string;
   readonly "text-accent-foreground": string;
   readonly "text-background": string;
+  readonly "text-background/65": string;
   readonly "text-background/70": string;
   readonly "text-background/75": string;
   readonly "text-balance": string;
@@ -2846,6 +2889,7 @@ declare const styles: {
   readonly "top-[1px]": string;
   readonly "top-[50%]": string;
   readonly "top-[60%]": string;
+  readonly "top-[calc(100%+8px)]": string;
   readonly "top-[calc(50%+0.11px)]": string;
   readonly "top-[calc(50%+0.12px)]": string;
   readonly "top-[calc(50%+0.36px)]": string;
@@ -3260,9 +3304,11 @@ declare const styles: {
   readonly "w-[151px]": string;
   readonly "w-[15px]": string;
   readonly "w-[1px]": string;
+  readonly "w-[220px]": string;
   readonly "w-[260px]": string;
   readonly "w-[262px]": string;
   readonly "w-[269px]": string;
+  readonly "w-[280px]": string;
   readonly "w-[2px]": string;
   readonly "w-[300px]": string;
   readonly "w-[320px]": string;
@@ -3293,6 +3339,7 @@ declare const styles: {
   readonly "whitespace-pre-wrap": string;
   readonly "z-10": string;
   readonly "z-20": string;
+  readonly "z-30": string;
   readonly "z-50": string;
   readonly "z-[1]": string;
   readonly "z-[70]": string;

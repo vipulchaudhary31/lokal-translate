@@ -29,6 +29,7 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
@@ -62,6 +63,7 @@
         "https://api.sarvam.ai/translate",
         "https://api.sarvam.ai/text-lid",
         "https://api.sarvam.ai/transliterate",
+        "https://api.sarvam.ai/v1/chat/completions",
         "https://generativelanguage.googleapis.com",
         "https://fonts.googleapis.com/css2",
         "https://fonts.gstatic.com"
