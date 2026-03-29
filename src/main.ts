@@ -673,13 +673,18 @@ async function finalizeCustomRefineText(
 async function isTextAlreadyInTargetLanguage(
   text: string,
   targetLanguage: string,
-  session?: SessionCache
+  session?: SessionCache,
+  sourceLanguage?: string
 ): Promise<boolean> {
   const cleanText = text.trim()
   if (!cleanText) return false
 
   if (targetLanguage === 'en') {
     return !isInIndicScript(cleanText)
+  }
+
+  if (sourceLanguage) {
+    return sourceLanguage === targetLanguage && isInIndicScript(cleanText)
   }
 
   const detected = await detectLanguage(cleanText, session)
@@ -692,6 +697,7 @@ const BULK_LANGUAGE_LABELS: Record<string, string> = {
   'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu', 'kn': 'Kannada',
   'ml': 'Malayalam', 'mr': 'Marathi', 'bn': 'Bengali', 'pa': 'Punjabi', 'gu': 'Gujarati'
 }
+const SUPPORTED_TARGET_LANGUAGES = [...BULK_LANGUAGES, 'en'] as const
 
 // Cost optimization: cache TTL 24h, max 800 entries (leave headroom for clientStorage 5MB)
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
@@ -1597,8 +1603,10 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     })
 
     if (!response.ok) {
-      console.error('Language detection API error:', response.status)
-      return 'en' // Default to English on error
+      const responseText = await response.text()
+      const errMsg = parseSarvamErrorBody(responseText, response.status)
+      console.error('Language detection API error:', response.status, errMsg)
+      throw new Error(errMsg)
     }
 
     const data = await response.json()
@@ -1625,8 +1633,9 @@ async function detectLanguage(text: string, session?: SessionCache): Promise<str
     await trimCacheIfNeeded()
     return mappedLanguage
   } catch (error) {
-    console.error('Language detection error:', error)
-    return 'en' // Default to English on error
+    const msg = getApiErrorMessage(error, 'Language detection')
+    console.error('Language detection error:', msg, error)
+    throw new Error(msg)
   }
 }
 
@@ -2251,6 +2260,7 @@ async function translateText(
     const cleanText = assertTranslateLength(text, 'Selected text', config)
     if (!cleanText || cleanText.length === 0) return text
     const norm = normalizeTextForCache(cleanText)
+    const hasIndicScript = isInIndicScript(cleanText)
     
     // Skip only if the text is already purely in the target language.
     //
@@ -2260,13 +2270,19 @@ async function translateText(
     //
     // For Indic target: skip when the text is already in that Indic script AND LID agrees,
     // but still call the API for Latin-script text (LID can misclassify e.g. "Srinivasalu Reddy").
-    const detected = await detectLanguage(cleanText, session)
     if (targetLanguage === 'en') {
-      if (!isInIndicScript(cleanText)) {
+      if (!hasIndicScript) {
         debugLog(`Skipping translate to English: no Indic script found ("${cleanText.substring(0, 30)}...")`)
         return text
       }
-    } else {
+    }
+
+    let detected: string | undefined = sourceLanguage
+    if (!detected && (targetLanguage !== 'en' || hasIndicScript)) {
+      detected = await detectLanguage(cleanText, session)
+    }
+
+    if (targetLanguage !== 'en') {
       if (detected === targetLanguage && isInIndicScript(cleanText)) {
         debugLog(`Skipping translate: text already in ${targetLanguage} script ("${cleanText.substring(0, 30)}...")`)
         return text
@@ -2274,10 +2290,10 @@ async function translateText(
     }
     
     let sourceCode: string
-    if (sourceLanguage === 'en') {
-      sourceCode = 'en-IN'
+    if (sourceLanguage) {
+      sourceCode = LANGUAGE_CODES[sourceLanguage] || sourceLanguage
     } else {
-      sourceCode = LANGUAGE_CODES[detected] || 'en-IN'
+      sourceCode = (detected ? LANGUAGE_CODES[detected] : undefined) || 'en-IN'
     }
     const targetCode = LANGUAGE_CODES[targetLanguage] || targetLanguage
     const outputScript = config.outputScript || 'default'
@@ -3207,6 +3223,13 @@ figma.ui.onmessage = async (msg) => {
     try {
       await loadFontPrefs()
       await reloadStyleMappings()
+      const requestedTargetLanguage = typeof msg.targetLanguage === 'string' ? msg.targetLanguage : ''
+      if (!SUPPORTED_TARGET_LANGUAGES.includes(requestedTargetLanguage as typeof SUPPORTED_TARGET_LANGUAGES[number])) {
+        const message = 'Please choose a target language before translating.'
+        figma.ui.postMessage({ type: 'translation-error', message })
+        figma.notify(message, { error: true })
+        return
+      }
       const translationMode: TranslationMode = msg.translationMode === 'sarvam-translate'
         || msg.translationMode === 'formal'
         || msg.translationMode === 'classic-colloquial'
@@ -3231,12 +3254,12 @@ figma.ui.onmessage = async (msg) => {
         const session = createSessionCache()
         let sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
         let sourceTextForTranslation = selectedText
-        if (await isTextAlreadyInTargetLanguage(selectedText, msg.targetLanguage, session)) {
+        if (await isTextAlreadyInTargetLanguage(selectedText, requestedTargetLanguage, session, sourceLanguage)) {
           const restyle = resolveRestyleTranslation(
             selectedRange.node,
             'range',
             selectedText,
-            msg.targetLanguage,
+            requestedTargetLanguage,
             translationMode
           )
           if (restyle.status === 'restyle') {
@@ -3259,14 +3282,14 @@ figma.ui.onmessage = async (msg) => {
           const actualSourceLanguage = await resolveActualSourceLanguage(sourceTextForTranslation, sourceLanguage, session)
           const result = await translateSelectedRange(
             selectedRange.node, selectedRange.start, selectedRange.end,
-            msg.targetLanguage, sourceLanguage, session, translationMode, sourceTextForTranslation
+            requestedTargetLanguage, sourceLanguage, session, translationMode, sourceTextForTranslation
           )
           if (!result.notified) {
             storeRangeTranslationMemory(selectedRange.node, {
               sourceText: sourceTextForTranslation,
               translatedText: result.appliedText,
               sourceLanguage: actualSourceLanguage,
-              targetLanguage: msg.targetLanguage,
+              targetLanguage: requestedTargetLanguage,
               mode: translationMode,
             })
             figma.ui.postMessage({
@@ -3399,7 +3422,7 @@ figma.ui.onmessage = async (msg) => {
         count: textNodes.length 
       })
       
-      debugLog('[TRANSLATE] Starting translation of', textNodes.length, 'text(s) to', msg.targetLanguage, '— open Plugins → Development → Open Console for details')
+      debugLog('[TRANSLATE] Starting translation of', textNodes.length, 'text(s) to', requestedTargetLanguage, '— open Plugins → Development → Open Console for details')
       
       const session = createSessionCache()
       const sourceLanguage = msg.assumeEnglish === true ? 'en' : undefined
@@ -3438,9 +3461,9 @@ figma.ui.onmessage = async (msg) => {
           
           if (type === 'dnd') {
             // DND = Do Not Disturb: preserve text, but still apply target font/style mappings
-            const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
+            const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage, sourceStyleBeforeTranslate)
             if (!applied) {
-              const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
+              const fontResult = await applyFontToTextNode(node, requestedTargetLanguage)
               if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
             }
             translatedCount++
@@ -3454,12 +3477,12 @@ figma.ui.onmessage = async (msg) => {
             let sourceLanguageForTranslation = sourceLanguage
             let isStyleRestyle = false
 
-            if (await isTextAlreadyInTargetLanguage(originalText, msg.targetLanguage, session)) {
+            if (await isTextAlreadyInTargetLanguage(originalText, requestedTargetLanguage, session, sourceLanguageForTranslation)) {
               const restyle = resolveRestyleTranslation(
                 node,
                 'node',
                 originalText,
-                msg.targetLanguage,
+                requestedTargetLanguage,
                 translationMode
               )
               if (restyle.status === 'restyle') {
@@ -3491,7 +3514,7 @@ figma.ui.onmessage = async (msg) => {
             const segmentResult = !isStyleRestyle
               ? await translateWithStyledSegments(
                   node,
-                  msg.targetLanguage,
+                  requestedTargetLanguage,
                   sourceLanguageForTranslation,
                   session,
                   translationMode
@@ -3503,7 +3526,7 @@ figma.ui.onmessage = async (msg) => {
               // For mixed-style nodes, translateWithStyledSegments already applied per-segment
               // fonts/weights — calling setTextStyleIdAsync here would overwrite them.
               if (!segmentResult.wasMixed) {
-                const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, sourceStyleBeforeTranslate)
+                const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage, sourceStyleBeforeTranslate)
                 if (applied) debugLog(`✅ Applied matching style from file`)
               }
               weightMappings.push(...segmentResult.weightMappings)
@@ -3511,7 +3534,7 @@ figma.ui.onmessage = async (msg) => {
                 sourceText: sourceTextForTranslation,
                 translatedText: node.characters,
                 sourceLanguage: actualSourceLanguage,
-                targetLanguage: msg.targetLanguage,
+                targetLanguage: requestedTargetLanguage,
                 mode: translationMode,
               })
               translatedCount++
@@ -3519,7 +3542,7 @@ figma.ui.onmessage = async (msg) => {
             } else {
               const translatedText = await transformTextForMode(
                 sourceTextForTranslation,
-                msg.targetLanguage,
+                requestedTargetLanguage,
                 sourceLanguageForTranslation,
                 session,
                 translationMode
@@ -3527,9 +3550,9 @@ figma.ui.onmessage = async (msg) => {
               if (translatedText && translatedText.trim().length > 0) {
                 const actuallyChanged = translatedText !== originalText
                 if (actuallyChanged || isStyleRestyle) {
-                  const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
+                  const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage)
                   if (!applied) {
-                    const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
+                    const fontResult = await applyFontToTextNode(node, requestedTargetLanguage)
                     if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                   }
                   node.characters = translatedText
@@ -3537,26 +3560,26 @@ figma.ui.onmessage = async (msg) => {
                     sourceText: sourceTextForTranslation,
                     translatedText,
                     sourceLanguage: actualSourceLanguage,
-                    targetLanguage: msg.targetLanguage,
+                    targetLanguage: requestedTargetLanguage,
                     mode: translationMode,
                   })
                   translatedCount++
                   debugLog(`✅ Translated and font updated: "${originalText.substring(0, 30)}..." → "${translatedText.substring(0, 30)}..."`)
                 } else {
                   // Text unchanged (e.g. number) but still apply font/style per preference
-                  const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
+                  const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage)
                   if (!applied) {
-                    const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
+                    const fontResult = await applyFontToTextNode(node, requestedTargetLanguage)
                     if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                   }
                   translatedCount++
-                  debugLog(`⏭️ No translation change; applied font/style: "${originalText.substring(0, 30)}..." in ${msg.targetLanguage}`)
+                  debugLog(`⏭️ No translation change; applied font/style: "${originalText.substring(0, 30)}..." in ${requestedTargetLanguage}`)
                 }
               } else {
                 // Empty result – apply font/style, count as success (text unchanged, font changed)
-                const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage)
+                const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage)
                 if (!applied) {
-                  const fontResult = await applyFontToTextNode(node, msg.targetLanguage)
+                  const fontResult = await applyFontToTextNode(node, requestedTargetLanguage)
                   if (fontResult.mappingUsed) weightMappings.push(`"${originalText.substring(0, 30)}...": ${fontResult.mappingUsed}`)
                 }
                 translatedCount++
@@ -3572,8 +3595,8 @@ figma.ui.onmessage = async (msg) => {
           if (type !== 'lma' && !(error instanceof TranslationRestyleError)) {
             try {
               const srcOverride = (type === 'translate' || type === 'dnd') ? sourceStyleBeforeTranslate ?? undefined : undefined
-              const applied = await applyUserDefinedStyleMapping(node, msg.targetLanguage, srcOverride)
-              if (!applied) await applyFontToTextNode(node, msg.targetLanguage)
+              const applied = await applyUserDefinedStyleMapping(node, requestedTargetLanguage, srcOverride)
+              if (!applied) await applyFontToTextNode(node, requestedTargetLanguage)
               fontApplied = true
             } catch (fontErr) {
               debugWarn('[Apply styles] Failed after translation error:', fontErr)

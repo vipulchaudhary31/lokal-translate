@@ -841,6 +841,11 @@ function Plugin() {
     parent.postMessage({ pluginMessage: { type: 'ui-notify', message, error } }, '*')
   }, [])
 
+  const handleTargetLanguageChange = React.useCallback((value: string) => {
+    if (!languageOptions.some(option => option.value === value)) return
+    setTargetLanguage(value)
+  }, [])
+
   const updateSelectedCardShadow = React.useCallback(() => {
     if (page !== 'translate') {
       setSelectedCardShadow(null)
@@ -938,6 +943,23 @@ function Plugin() {
     if (!context?.canRefine || !context.nodeId) return null
     return context.nodeId
   }, [])
+
+  const runTranslate = React.useCallback(() => {
+    if (isBulkRunning) {
+      notifyInFigma('Please wait for bulk translate to finish before starting translate.', true)
+      return
+    }
+    if (isSwapping) {
+      notifyInFigma('Please wait for font swap to finish before starting translate.', true)
+      return
+    }
+    if (isTranslateRunning) return
+    setWeightMappingInfo([])
+    setShowWeightMappings(false)
+    parent.postMessage({ pluginMessage: {
+      type: 'translate', targetLanguage, assumeEnglish: assumeEnglishSource && targetLanguage !== 'en', translationMode,
+    }}, '*')
+  }, [assumeEnglishSource, isBulkRunning, isSwapping, isTranslateRunning, notifyInFigma, targetLanguage, translationMode])
 
   React.useEffect(() => {
     parent.postMessage({ pluginMessage: { type: 'get-api-key' } }, '*')
@@ -1188,7 +1210,7 @@ function Plugin() {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [getRefineThreadKey, loadRefineContext, page, refineThreads])
+  }, [getRefineThreadKey, loadRefineContext, page, refineThreads, runTranslate, notifyInFigma, apiKeyReturnPage])
 
   const activePage = page
   const activeRefineSelectionKey = getRefineThreadKey(refineSelection)
@@ -1248,23 +1270,6 @@ function Plugin() {
     }
     setIsSavingApiKey(true)
     parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey: trimmedApiKeyDraft, geminiApiKey: trimmedGeminiApiKeyDraft } }, '*')
-  }
-
-  const runTranslate = () => {
-    if (isBulkRunning) {
-      notifyInFigma('Please wait for bulk translate to finish before starting translate.', true)
-      return
-    }
-    if (isSwapping) {
-      notifyInFigma('Please wait for font swap to finish before starting translate.', true)
-      return
-    }
-    if (isTranslateRunning) return
-    setWeightMappingInfo([])
-    setShowWeightMappings(false)
-    parent.postMessage({ pluginMessage: {
-      type: 'translate', targetLanguage, assumeEnglish: assumeEnglishSource && targetLanguage !== 'en', translationMode,
-    }}, '*')
   }
 
   const handleTranslate = () => {
@@ -1469,7 +1474,7 @@ function Plugin() {
                               key={option.value}
                               option={option}
                               selected={targetLanguage === option.value}
-                              onSelect={setTargetLanguage}
+                              onSelect={handleTargetLanguageChange}
                               buttonRef={node => {
                                 cardRefs.current[option.value] = node
                               }}
