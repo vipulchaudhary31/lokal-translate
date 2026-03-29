@@ -893,7 +893,7 @@ async function saveGeminiApiKey(apiKey: string): Promise<string> {
 
 async function requireGeminiApiKey(): Promise<string> {
   const apiKey = await loadGeminiApiKey()
-  if (!apiKey) throw new Error('Please add your Gemini API key to use Refine.')
+  if (!apiKey) throw new Error('Please add your Gemini API key to use Ask.')
   return apiKey
 }
 
@@ -1641,7 +1641,7 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
         kind: 'invalid',
         text: '',
         charCount: 0,
-        message: 'Highlight some text to refine.',
+        message: 'Highlight some text to ask about.',
       }
     }
     return {
@@ -1664,7 +1664,7 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
       kind: 'invalid',
       text: '',
       charCount: 0,
-      message: 'Select one text layer or highlight a text range to refine.',
+        message: 'Select one text layer or highlight a text range to ask about.',
     }
   }
 
@@ -1882,7 +1882,7 @@ async function generateBaseRefineSuggestions(
     list.findIndex(candidate => candidate.label === item.label) === index
   )
   if (deduped.length === 0) {
-    throw new Error('Could not generate refine options right now. Please try again.')
+    throw new Error('Could not generate Ask options right now. Please try again.')
   }
 
   session?.rf?.set(sessionKey, deduped)
@@ -1924,7 +1924,7 @@ async function generateCustomRefineAnswer(
       parts: [
         {
           text: [
-            'You are Lokal Refine, a chatbot-style writing assistant inside a Figma plugin.',
+            'You are Lokal Ask, a chatbot-style writing assistant inside a Figma plugin.',
             'Use the full parent layer text as supporting context.',
             'If the current selection is a highlighted range, give special attention to that selection while still considering the full layer.',
             'Reply like a normal helpful chatbot in English.',
@@ -2110,7 +2110,7 @@ function parseGeminiErrorBody(responseText: string, status: number): string {
   } catch {
     // Ignore parse errors and fall back to status-based messages.
   }
-  if (status === 400) return 'Bad request. Check the refine prompt and selected text.'
+  if (status === 400) return 'Bad request. Check the Ask prompt and selected text.'
   if (status === 403) return 'Gemini API key invalid or expired. Check your Gemini API key.'
   if (status === 429) return 'Gemini rate limit reached. Wait a moment and try again.'
   if (status >= 500) return 'Gemini API server error. Try again in a few moments.'
@@ -3091,7 +3091,7 @@ figma.ui.onmessage = async (msg) => {
       refineLog('context loaded', context)
       figma.ui.postMessage({ type: 'refine-context', context })
     } catch (error) {
-      const errMsg = getApiErrorMessage(error, 'Refine')
+      const errMsg = getApiErrorMessage(error, 'Ask')
       refineWarn('context error', error)
       figma.ui.postMessage({ type: 'refine-error', scope: 'context', message: errMsg })
       figma.notify(errMsg, { error: true })
@@ -3103,7 +3103,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'refine-context', context })
       figma.ui.postMessage({ type: 'refine-selection-loaded', context, suggestions: [] })
     } catch (error) {
-      const errMsg = getApiErrorMessage(error, 'Refine')
+      const errMsg = getApiErrorMessage(error, 'Ask')
       refineWarn('load selection error', error)
       figma.ui.postMessage({ type: 'refine-error', scope: 'base', message: errMsg })
       figma.notify(errMsg, { error: true })
@@ -3116,7 +3116,7 @@ figma.ui.onmessage = async (msg) => {
         prompt: typeof msg.customPrompt === 'string' ? msg.customPrompt : '',
       })
       if (!context.canRefine || !context.nodeId) {
-        const message = context.message || 'Select one text layer or highlight a text range to refine.'
+        const message = context.message || 'Select one text layer or highlight a text range to ask about.'
         figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message })
         figma.notify(message, { error: true })
         return
@@ -3124,7 +3124,7 @@ figma.ui.onmessage = async (msg) => {
 
       const customPrompt = typeof msg.customPrompt === 'string' ? msg.customPrompt.trim() : ''
       if (!customPrompt) {
-        const message = 'Add a refine prompt to continue.'
+        const message = 'Add an Ask prompt to continue.'
         figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message })
         figma.notify(message, { error: true })
         return
@@ -3154,7 +3154,7 @@ figma.ui.onmessage = async (msg) => {
         seedText: typeof msg.layerText === 'string' ? msg.layerText : context.layerText || context.text,
       })
     } catch (error) {
-      const errMsg = getApiErrorMessage(error, 'Refine')
+      const errMsg = getApiErrorMessage(error, 'Ask')
       refineWarn('custom refine error', error)
       figma.ui.postMessage({ type: 'refine-error', scope: 'custom', message: errMsg })
       figma.notify(errMsg, { error: true })
@@ -3174,7 +3174,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'refine-applied' })
       figma.notify('Applied refined copy.')
     } catch (error) {
-      const errMsg = getApiErrorMessage(error, 'Refine apply')
+      const errMsg = getApiErrorMessage(error, 'Ask apply')
       figma.ui.postMessage({ type: 'refine-error', scope: 'apply', message: errMsg })
       figma.notify(errMsg, { error: true })
     }

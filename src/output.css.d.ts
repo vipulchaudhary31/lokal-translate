@@ -32,6 +32,7 @@ declare const styles: {
   readonly "-my-0.5": string;
   readonly "-right-12": string;
   readonly "-top-12": string;
+  readonly "-top-4": string;
   readonly "-translate-x-1": string;
   readonly "-translate-x-1/2": string;
   readonly "-translate-x-px": string;
@@ -162,6 +163,7 @@ declare const styles: {
   readonly "bg-[#b42318]/5": string;
   readonly "bg-[#bf4e30]": string;
   readonly "bg-[#e8e8e8]": string;
+  readonly "bg-[#f3f2ef]": string;
   readonly "bg-[#f3f3f1]": string;
   readonly "bg-[#f5f5f5]": string;
   readonly "bg-[#f78430]": string;
@@ -425,6 +427,8 @@ declare const styles: {
   readonly "disabled:cursor-not-allowed": string;
   readonly "disabled:opacity-50": string;
   readonly "disabled:pointer-events-none": string;
+  readonly "drop-shadow-[0_1px_2px_rgba(17,24,39,0.04)]": string;
+  readonly "drop-shadow-[0_2px_3px_rgba(17,24,39,0.08)]": string;
   readonly "drop-shadow-[0_3px_6px_rgba(126,84,28,0.12)]": string;
   readonly "duration-1000": string;
   readonly "duration-150": string;
@@ -444,7 +448,10 @@ declare const styles: {
   readonly "file:inline-flex": string;
   readonly "file:text-foreground": string;
   readonly "file:text-sm": string;
+  readonly "fill-[#f3f2ef]": string;
+  readonly "fill-card": string;
   readonly "fill-current": string;
+  readonly "fill-foreground": string;
   readonly "fill-primary": string;
   readonly "filter": string;
   readonly "first:[&:has([aria-selected])]:rounded-l-md": string;
@@ -515,6 +522,8 @@ declare const styles: {
   readonly "font-semibold": string;
   readonly "from-[#cce5f5]": string;
   readonly "from-[#e8dcc8]": string;
+  readonly "from-transparent": string;
+  readonly "gap-0": string;
   readonly "gap-0.5": string;
   readonly "gap-1": string;
   readonly "gap-1.5": string;
@@ -741,6 +750,7 @@ declare const styles: {
   readonly "h-[18.459px]": string;
   readonly "h-[18.647px]": string;
   readonly "h-[18.892px]": string;
+  readonly "h-[18px]": string;
   readonly "h-[19.031px]": string;
   readonly "h-[1px]": string;
   readonly "h-[2.008px]": string;
@@ -2017,6 +2027,9 @@ declare const styles: {
   readonly "max-h-[86vh]": string;
   readonly "max-h-[88vh]": string;
   readonly "max-w-(--skeleton-width)": string;
+  readonly "max-w-[190px]": string;
+  readonly "max-w-[200px]": string;
+  readonly "max-w-[210px]": string;
   readonly "max-w-[240px]": string;
   readonly "max-w-[520px]": string;
   readonly "max-w-[62px]": string;
@@ -2029,8 +2042,14 @@ declare const styles: {
   readonly "mb-1": string;
   readonly "mb-2": string;
   readonly "mb-3": string;
+  readonly "mb-4": string;
   readonly "mb-[-4px]": string;
+  readonly "mb-[14px]": string;
+  readonly "mb-[16px]": string;
+  readonly "mb-[17px]": string;
+  readonly "mb-[18px]": string;
   readonly "mb-[7px]": string;
+  readonly "mb-[8px]": string;
   readonly "md:absolute": string;
   readonly "md:after:hidden": string;
   readonly "md:block": string;
@@ -2076,6 +2095,8 @@ declare const styles: {
   readonly "mix-blend-darken": string;
   readonly "mix-blend-luminosity": string;
   readonly "ml-1": string;
+  readonly "ml-1.5": string;
+  readonly "ml-2": string;
   readonly "ml-auto": string;
   readonly "mt-0": string;
   readonly "mt-0.5": string;
@@ -2084,6 +2105,7 @@ declare const styles: {
   readonly "mt-2": string;
   readonly "mt-3": string;
   readonly "mt-4": string;
+  readonly "mt-[2px]": string;
   readonly "mt-auto": string;
   readonly "mt-px": string;
   readonly "mx-2": string;
@@ -2690,6 +2712,7 @@ declare const styles: {
   readonly "ring-0": string;
   readonly "ring-1": string;
   readonly "ring-2": string;
+  readonly "ring-border/70": string;
   readonly "ring-offset-2": string;
   readonly "ring-offset-background": string;
   readonly "ring-primary": string;
@@ -2741,6 +2764,8 @@ declare const styles: {
   readonly "shadow-[0_10px_18px_rgba(17,24,39,0.055),0_3px_8px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_10px_20px_rgba(17,24,39,0.07),0_2px_6px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]": string;
+  readonly "shadow-[0_10px_24px_rgba(17,24,39,0.10)]": string;
+  readonly "shadow-[0_10px_24px_rgba(17,24,39,0.28)]": string;
   readonly "shadow-[0_12px_26px_rgba(17,24,39,0.06),0_2px_8px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_12px_28px_rgba(17,24,39,0.04),0_2px_8px_rgba(17,24,39,0.02)]": string;
   readonly "shadow-[0_12px_28px_rgba(17,24,39,0.08),0_4px_12px_rgba(17,24,39,0.04)]": string;
@@ -2758,6 +2783,7 @@ declare const styles: {
   readonly "shadow-[0_22px_46px_rgba(17,24,39,0.05),0_8px_20px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_24px_80px_rgba(0,0,0,0.28)]": string;
   readonly "shadow-[0_4px_12px_rgba(17,24,39,0.04)]": string;
+  readonly "shadow-[0_4px_12px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[0px_2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[0px_8px_18px_0px_rgba(0,0,0,0.08)]": string;
@@ -2815,7 +2841,10 @@ declare const styles: {
   readonly "sr-only": string;
   readonly "start": string;
   readonly "sticky": string;
+  readonly "stroke-[0.75px]": string;
+  readonly "stroke-[1.25px]": string;
   readonly "stroke-[3]": string;
+  readonly "stroke-border": string;
   readonly "table": string;
   readonly "table-caption": string;
   readonly "table-cell": string;
@@ -2863,6 +2892,7 @@ declare const styles: {
   readonly "text-left": string;
   readonly "text-lg": string;
   readonly "text-muted-foreground": string;
+  readonly "text-muted-foreground/75": string;
   readonly "text-popover-foreground": string;
   readonly "text-primary": string;
   readonly "text-primary-foreground": string;
@@ -2877,6 +2907,7 @@ declare const styles: {
   readonly "text-xl": string;
   readonly "text-xs": string;
   readonly "to-[#f0f0f0]": string;
+  readonly "to-background": string;
   readonly "top-0": string;
   readonly "top-1": string;
   readonly "top-1.5": string;
@@ -3257,6 +3288,7 @@ declare const styles: {
   readonly "transition-shadow": string;
   readonly "transition-transform": string;
   readonly "translate-x-1": string;
+  readonly "translate-x-2": string;
   readonly "translate-x-[-50%]": string;
   readonly "translate-x-px": string;
   readonly "translate-y-0.5": string;
@@ -3269,6 +3301,7 @@ declare const styles: {
   readonly "underline-offset-4": string;
   readonly "uppercase": string;
   readonly "via-[#f5efe0]": string;
+  readonly "via-background/88": string;
   readonly "w-(--sidebar-width)": string;
   readonly "w-0": string;
   readonly "w-1": string;

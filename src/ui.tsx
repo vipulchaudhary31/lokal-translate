@@ -13,6 +13,7 @@ import {
   Loader2,
   Info,
   Sparkles,
+  Wand,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -25,6 +26,7 @@ import {
   SlidersHorizontal,
   Languages,
   CaseSensitive,
+  Plug,
 } from 'lucide-react'
 import bengaliCardImage from '../assets/bengali.png'
 import gujaratiCardImage from '../assets/gujarati.png'
@@ -36,7 +38,6 @@ import selectedBgImage from '../assets/selected_bg_image.png'
 import tamilCardImage from '../assets/tamil.png'
 import teluguCardImage from '../assets/telugu.png'
 import brandingOne from '../assets/branding-1.png'
-import brandingTwo from '../assets/branding-2.png'
 
 type LanguageArt =
   | { kind: 'emoji'; value: string }
@@ -147,7 +148,7 @@ const DEFAULT_LANGUAGE_FONTS: Record<string, string> = {
 
 type TranslationMode = 'sarvam-translate' | 'formal' | 'classic-colloquial' | 'modern-colloquial' | 'transliterate'
 const translationModeOptions: Array<{ value: TranslationMode; label: string; description: string }> = [
-  { value: 'sarvam-translate', label: 'Sarvam', description: 'Default model with broader language support' },
+  { value: 'sarvam-translate', label: 'Default', description: 'Default model with broader language support' },
   { value: 'formal', label: 'Formal', description: 'Polished and neutral' },
   { value: 'classic-colloquial', label: 'Classic', description: 'Natural everyday phrasing' },
   { value: 'modern-colloquial', label: 'Modern', description: 'More current and conversational' },
@@ -763,43 +764,22 @@ function StyleMappingModal({
 
 function BrandingStrip() {
   return (
-    <div className="border-t border-[#dddddd] px-4 pt-3">
-      <div className="mx-auto grid w-full max-w-[520px] grid-cols-[1fr_auto_1fr] items-end gap-4">
-        <a
-          href="https://medium.com/lokal-design"
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-[29px] flex-col items-center justify-between justify-self-center"
-        >
-          <p className="text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
-            Made with ♡
-          </p>
-          <img
-            src={brandingOne}
-            alt="Lokal School of Design"
-            className="block h-[17px] w-auto max-w-none"
-          />
-        </a>
-
-        <div className="h-[29px] w-px bg-[rgba(97,96,97,0.16)]" />
-
-        <a
-          href="https://www.sarvam.ai/blogs/sarvam-translate"
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-[29px] w-[84px] flex-col items-center justify-between justify-self-center"
-        >
-          <p className="text-center text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
-            Translations by
-          </p>
-          <img
-            src={brandingTwo}
-            alt="Sarvam"
-            className="block h-[16px] w-auto max-w-none"
-          />
-        </a>
-      </div>
-    </div>
+    <a
+      href="https://medium.com/lokal-design"
+      target="_blank"
+      rel="noreferrer"
+      className="flex shrink-0 items-center"
+    >
+      <p className="text-[10px] leading-[11px] text-[rgba(110,110,104,0.6)]">
+        Made with ♡
+      </p>
+      <div className="ml-2 h-[18px] w-px bg-[rgba(97,96,97,0.16)]" />
+      <img
+        src={brandingOne}
+        alt="Lokal School of Design"
+        className="ml-1.5 block h-[17px] w-auto max-w-none"
+      />
+    </a>
   )
 }
 
@@ -1311,11 +1291,11 @@ function Plugin() {
     }
     if (!refineSelection?.canRefine) {
       loadRefineContext(true)
-      notifyInFigma(refineSelection?.message || 'Select one text layer or highlight text to refine.', true)
+      notifyInFigma(refineSelection?.message || 'Select one text layer or highlight text to ask about.', true)
       return
     }
     if (!refinePrompt.trim()) {
-      notifyInFigma('Add a refine prompt to continue.', true)
+      notifyInFigma('Add an ask prompt to continue.', true)
       return
     }
     setIsGeneratingCustomRefine(true)
@@ -1393,7 +1373,7 @@ function Plugin() {
   const selectedLanguageLabel =
     languageOptions.find(option => option.value === targetLanguage)?.label || 'Selected language'
   const selectedTranslationModeLabel =
-    translationModeOptions.find(option => option.value === translationMode)?.label || 'Sarvam'
+    translationModeOptions.find(option => option.value === translationMode)?.label || 'Default'
   const selectedTranslationModeHelper = translationModeHelperText[translationMode]
 
   const handleSaveFontPrefs = () => {
@@ -1432,17 +1412,16 @@ function Plugin() {
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
-      <div className={`flex-1 min-h-0 ${isDedicatedPrefsPage || isRefinePage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none fade-scroll-y'}`}>
-        <div className={`px-5 py-4 ${(isDedicatedPrefsPage || isRefinePage) ? 'flex h-full min-h-0 flex-col' : ''}`}>
-          <div className={(isDedicatedPrefsPage || isRefinePage) ? 'flex min-h-0 flex-1 flex-col' : isApiKeyPage ? 'flex min-h-0 flex-1 flex-col space-y-4 pb-2' : 'space-y-4'}>
+      <div className={`flex-1 min-h-0 ${isRefinePage || isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none fade-scroll-y'}`}>
+        <div className={`px-5 py-4 ${isRefinePage || isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
+          <div className={isRefinePage || isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : isApiKeyPage ? 'flex min-h-0 flex-1 flex-col space-y-4 pb-2' : 'space-y-4'}>
             {activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' ? (
               <div className={isRefinePage ? 'flex min-h-0 flex-1 flex-col space-y-[8px] pt-1' : 'space-y-[8px] pt-1'}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-end gap-[18px]">
+                <div className="mb-[16px] flex items-end gap-[18px]">
                     <button
                       type="button"
                       onClick={() => setPage('translate')}
-                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                      className={`relative flex items-center text-[21px] leading-none tracking-[-0.04em] transition-colors ${
                         activePage === 'translate' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                       }`}
                     >
@@ -1451,33 +1430,21 @@ function Plugin() {
                     <button
                       type="button"
                       onClick={() => setPage('refine')}
-                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                      className={`relative flex items-center text-[21px] leading-none tracking-[-0.04em] transition-colors ${
                         activePage === 'refine' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                       }`}
                     >
-                      <span>Refine</span>
+                      <span>Ask</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setPage('fontSwap')}
-                      className={`relative flex items-center pb-2 text-[21px] leading-none tracking-[-0.04em] transition-colors ${
+                      className={`relative flex items-center text-[21px] leading-none tracking-[-0.04em] transition-colors ${
                         activePage === 'fontSwap' ? 'font-semibold text-foreground' : 'font-semibold text-[#C7CDD8]'
                       }`}
                     >
                       <span>Swap</span>
                     </button>
-                  </div>
-                  {activePage === 'translate' ? (
-                    <button
-                      type="button"
-                      className="flex h-[34px] shrink-0 items-center justify-center px-1 pb-2 text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => setPage('fontPrefs')}
-                      aria-label="Open font preferences"
-                      title="Font preferences"
-                    >
-                      <CaseSensitive className="h-4 w-4" />
-                    </button>
-                  ) : null}
                 </div>
                 {activePage === 'translate' ? (
                   <div className="space-y-4">
@@ -1512,7 +1479,7 @@ function Plugin() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="mt-[2px] space-y-2">
                       <div className="relative flex gap-2">
                         <div className="flex min-w-0 flex-1 overflow-hidden rounded-md bg-foreground shadow-sm">
                           <button
@@ -1559,7 +1526,7 @@ function Plugin() {
                           className="flex min-w-0 items-center gap-2 text-left"
                           onClick={() => setShowTranslationStylePicker(prev => !prev)}
                         >
-                          <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <Wand className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="text-[12px] font-medium text-foreground">Translation Style</span>
                           <span className="inline-flex h-6 items-center rounded-full border border-input bg-muted px-2.5 text-[11px] font-medium text-foreground">
                             {selectedTranslationModeLabel}
@@ -1575,28 +1542,30 @@ function Plugin() {
                           <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showTranslationStylePicker ? 'rotate-180' : ''}`} />
                         </button>
                       </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                        {selectedTranslationModeHelper}
-                      </p>
                       {showTranslationStylePicker ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {translationModeOptions.map(option => {
-                            const isActive = translationMode === option.value
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setTranslationMode(option.value)}
-                                className={`inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-medium transition-colors ${
-                                  isActive
-                                    ? 'border-input bg-muted text-foreground'
-                                    : 'border-input bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-                                }`}
-                              >
-                                {option.label}
-                              </button>
-                            )
-                          })}
+                        <div className="mt-2">
+                          <div className="flex flex-wrap gap-2">
+                            {translationModeOptions.map(option => {
+                              const isActive = translationMode === option.value
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setTranslationMode(option.value)}
+                                  className={`inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-medium transition-colors ${
+                                    isActive
+                                      ? 'border-input bg-muted text-foreground'
+                                      : 'border-input bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                            {selectedTranslationModeHelper}
+                          </p>
                         </div>
                       ) : null}
                     </div>
@@ -1719,7 +1688,7 @@ function Plugin() {
                               className="h-9 w-9 rounded-full p-0 shadow-sm"
                               disabled={isGeneratingCustomRefine || !refinePrompt.trim()}
                               onClick={handleRunRefine}
-                              aria-label="Send refine prompt"
+                              aria-label="Send ask prompt"
                             >
                               {isGeneratingCustomRefine ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
                             </Button>
@@ -1761,7 +1730,7 @@ function Plugin() {
                 )}
               </div>
             ) : activePage === 'fontPrefs' ? (
-              <div className="space-y-4 pb-4">
+              <div className="flex min-h-0 flex-1 flex-col gap-4">
                 <div className="flex items-center">
                   <button
                     type="button"
@@ -2031,70 +2000,115 @@ function Plugin() {
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />
 
-            {activePage === 'translate' || activePage === 'fontSwap' ? <BrandingStrip /> : null}
           </div>
         </div>
       </div>
-      {activePage === 'translate' || activePage === 'refine' ? (
-        <div className={`flex items-center gap-4 bg-background px-5 ${activePage === 'refine' ? 'pb-2 pt-1' : 'pb-3 pt-2'}`}>
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
-            onClick={() => parent.postMessage({ pluginMessage: { type: 'hard-reset' } }, '*')}
-          >
-            Reset Data
-          </button>
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
-            onClick={() => parent.postMessage({ pluginMessage: { type: 'ftux-reset' } }, '*')}
-          >
-            Temp Reset
-          </button>
+      {activePage === 'translate' || activePage === 'fontSwap' ? (
+        <div className="relative bg-background px-5 pb-3 pt-2">
+          <div className="pointer-events-none absolute inset-x-0 -top-4 h-4 bg-gradient-to-b from-transparent via-background/88 to-background" />
           {activePage === 'translate' ? (
-            <button
-              type="button"
-              className={`text-[11px] underline transition-colors ${
-                assumeEnglishSource ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setAssumeEnglishSource(prev => !prev)}
-            >
-              Assume English: {assumeEnglishSource ? 'On' : 'Off'}
-            </button>
+            <div className="-mx-5 overflow-x-auto scrollbar-none fade-scroll-x px-5">
+              <div className="flex w-max items-center gap-4">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+                        onClick={() => setPage('fontPrefs')}
+                        aria-label="Open font preferences"
+                      >
+                        <CaseSensitive className="h-3.5 w-3.5" />
+                        <span>Font</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent align="start">
+                      <p>Font preferences</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+                        onClick={() => {
+                          setApiKeyReturnPage(activePage)
+                          setApiKeyDraft(apiKey)
+                          setGeminiApiKeyDraft(geminiApiKey)
+                          setShowApiKeyValue(false)
+                          setShowGeminiApiKeyValue(false)
+                          setPage('apiKey')
+                        }}
+                        aria-label="Open API key settings"
+                      >
+                        <Plug className="h-3.5 w-3.5" />
+                        <span>API Key</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[210px]">
+                      <p>API key settings</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+                        onClick={() => parent.postMessage({ pluginMessage: { type: 'clear-cache' } }, '*')}
+                      >
+                        Clear Cache
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[200px]">
+                      <p>Clears this plugin&apos;s cached translation entries only.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={`text-[11px] underline transition-colors ${
+                          assumeEnglishSource ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                        onClick={() => setAssumeEnglishSource(prev => !prev)}
+                      >
+                        Assume English: {assumeEnglishSource ? 'On' : 'Off'}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent align="end" className="max-w-[210px]">
+                      <p>Treats the selected text as English before translation, which helps save language detection cost.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
+                      >
+                        Help
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent align="end" className="max-w-[190px]">
+                      <p>Rename a layer to &quot;dnd&quot; to skip translation and only update font/style, or &quot;lma&quot; to leave it untouched.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
           ) : null}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
-                >
-                  Help
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  Rename a layer to{' '}
-                  <span className="font-semibold text-foreground">&quot;dnd&quot;</span> to skip translation and only update font/style, or{' '}
-                  <span className="font-semibold text-foreground">&quot;lma&quot;</span> to leave it untouched.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground underline transition-colors hover:text-foreground"
-            onClick={() => {
-              setApiKeyReturnPage(activePage)
-              setApiKeyDraft(apiKey)
-              setGeminiApiKeyDraft(geminiApiKey)
-              setShowApiKeyValue(false)
-              setShowGeminiApiKeyValue(false)
-              setPage('apiKey')
-            }}
-          >
-            API Key
-          </button>
+          <div className={`${activePage === 'translate' ? 'mt-4' : ''} border-t border-[#dddddd] pt-3`}>
+            <div className="flex justify-start">
+              <BrandingStrip />
+            </div>
+          </div>
         </div>
       ) : null}
 

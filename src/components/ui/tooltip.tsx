@@ -21,23 +21,30 @@ function TooltipTrigger({
   return <TooltipPrimitive.Trigger {...props} />
 }
 
-function TooltipContent({
-  className,
-  sideOffset = 8,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
-  return (
-    <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Content
-        sideOffset={sideOffset}
-        className={cn(
-          'z-50 max-w-[240px] rounded-md border border-border bg-card px-3 py-2 text-[11px] leading-relaxed text-muted-foreground shadow-[0_12px_28px_rgba(17,24,39,0.08),0_4px_12px_rgba(17,24,39,0.04)]',
-          className
-        )}
-        {...props}
+const TooltipContent = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
+>(({ className, sideOffset = 8, collisionPadding = 12, children, ...props }, ref) => (
+  <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Content
+      ref={ref}
+      sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
+      className={cn(
+        'z-50 max-w-[240px] overflow-visible rounded-xl border border-border bg-[#f3f2ef] px-2.5 py-1.5 text-[11px] leading-relaxed text-foreground shadow-[0_4px_12px_rgba(17,24,39,0.05)]',
+        className
+      )}
+      {...props}
+    >
+      {children}
+      <TooltipPrimitive.Arrow
+        className="fill-[#f3f2ef] stroke-border stroke-[1.25px]"
+        width={12}
+        height={8}
       />
-    </TooltipPrimitive.Portal>
-  )
-}
+    </TooltipPrimitive.Content>
+  </TooltipPrimitive.Portal>
+))
+TooltipContent.displayName = TooltipPrimitive.Content.displayName
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
