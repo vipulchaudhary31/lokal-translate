@@ -168,6 +168,7 @@ type RefineSelectionState = {
   kind: 'node' | 'range' | 'invalid'
   text: string
   layerText?: string
+  selectionKey?: string
   charCount: number
   nodeId?: string
   nodeName?: string
@@ -940,7 +941,12 @@ function Plugin() {
   }, [])
 
   const getRefineThreadKey = React.useCallback((context: RefineSelectionState | null) => {
-    if (!context?.canRefine || !context.nodeId) return null
+    if (!context?.canRefine) return null
+    if (typeof context.selectionKey === 'string' && context.selectionKey.trim()) return context.selectionKey
+    if (!context.nodeId) return null
+    if (context.kind === 'range' && typeof context.start === 'number' && typeof context.end === 'number') {
+      return `${context.nodeId}:${context.start}-${context.end}`
+    }
     return context.nodeId
   }, [])
 
@@ -1054,12 +1060,14 @@ function Plugin() {
           if (typeof msg.generatedText === 'string') {
             setRefineAnswer(msg.generatedText)
           }
-          if (typeof msg.nodeId === 'string' && typeof msg.prompt === 'string' && typeof msg.generatedText === 'string') {
-            const nextPromptIndex = refineThreads[msg.nodeId]?.turns.length ?? 0
-            setDisplayedRefineThreadKey(msg.nodeId)
-            setRefineScrollTarget({ key: msg.nodeId, index: nextPromptIndex })
+          const threadKey = typeof msg.selectionKey === 'string' && msg.selectionKey.trim()
+            ? msg.selectionKey
+            : (typeof msg.nodeId === 'string' ? msg.nodeId : '')
+          if (threadKey && typeof msg.nodeId === 'string' && typeof msg.prompt === 'string' && typeof msg.generatedText === 'string') {
+            const nextPromptIndex = refineThreads[threadKey]?.turns.length ?? 0
+            setDisplayedRefineThreadKey(threadKey)
+            setRefineScrollTarget({ key: threadKey, index: nextPromptIndex })
             setRefineThreads(prev => {
-              const threadKey = msg.nodeId
               const current = prev[threadKey] ?? {
                 selectionKey: threadKey,
                 nodeId: msg.nodeId,

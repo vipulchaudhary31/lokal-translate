@@ -67,6 +67,7 @@ type RefineSelectionContext = {
   kind: 'node' | 'range' | 'invalid'
   text: string
   layerText?: string
+  selectionKey?: string
   charCount: number
   nodeId?: string
   nodeName?: string
@@ -117,6 +118,14 @@ const BASE_REFINE_VARIANTS: RefineVariant[] = [
     note: 'More current and conversational',
   },
 ]
+
+function getRefineSelectionKey(context: Pick<RefineSelectionContext, 'kind' | 'nodeId' | 'start' | 'end'>): string | undefined {
+  if (!context.nodeId) return undefined
+  if (context.kind === 'range' && typeof context.start === 'number' && typeof context.end === 'number') {
+    return `${context.nodeId}:${context.start}-${context.end}`
+  }
+  return context.nodeId
+}
 
 function sanitizeRefineThreads(value: unknown): Record<string, RefineThreadState> {
   if (!value || typeof value !== 'object') return {}
@@ -1658,6 +1667,7 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
       kind: 'range',
       text: selectedText,
       layerText: selectedRange.node.characters,
+      selectionKey: `${selectedRange.node.id}:${selectedRange.start}-${selectedRange.end}`,
       charCount: cleanText.length,
       nodeId: selectedRange.node.id,
       nodeName: selectedRange.node.name || 'Text',
@@ -1694,6 +1704,7 @@ async function getRefineSelectionContext(): Promise<RefineSelectionContext> {
     kind: 'node',
     text: node.characters,
     layerText: node.characters,
+    selectionKey: node.id,
     charCount: cleanText.length,
     nodeId: node.id,
     nodeName: node.name || 'Text',
@@ -3154,7 +3165,7 @@ figma.ui.onmessage = async (msg) => {
         customPrompt,
         context.kind === 'range' ? 'range' : 'node',
         Array.isArray(msg.history) ? msg.history : [],
-        typeof msg.layerText === 'string' ? msg.layerText : context.layerText,
+        context.layerText,
         session
       )
       refineLog('custom refine complete', { answer })
@@ -3166,8 +3177,8 @@ figma.ui.onmessage = async (msg) => {
         generatedText: answer,
         prompt: customPrompt,
         nodeId: context.nodeId,
-        selectionKey: context.nodeId,
-        seedText: typeof msg.layerText === 'string' ? msg.layerText : context.layerText || context.text,
+        selectionKey: getRefineSelectionKey(context),
+        seedText: context.layerText || context.text,
       })
     } catch (error) {
       const errMsg = getApiErrorMessage(error, 'Ask')

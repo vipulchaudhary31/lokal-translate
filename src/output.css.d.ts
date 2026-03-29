@@ -131,6 +131,7 @@ declare const styles: {
   readonly "after:left-1/2": string;
   readonly "after:w-1": string;
   readonly "after:w-[2px]": string;
+  readonly "align-[-0.15em]": string;
   readonly "align-middle": string;
   readonly "animate-pulse": string;
   readonly "animate-spin": string;
@@ -155,6 +156,7 @@ declare const styles: {
   readonly "bg-[#1f9d55]": string;
   readonly "bg-[#1f9d55]/8": string;
   readonly "bg-[#2c2c2c]": string;
+  readonly "bg-[#4a4a4a]": string;
   readonly "bg-[#D88A1F]": string;
   readonly "bg-[#F1F1F1]": string;
   readonly "bg-[#F78430]": string;
@@ -188,6 +190,7 @@ declare const styles: {
   readonly "bg-card/55": string;
   readonly "bg-center": string;
   readonly "bg-cover": string;
+  readonly "bg-current": string;
   readonly "bg-destructive": string;
   readonly "bg-destructive/10": string;
   readonly "bg-destructive/5": string;
@@ -227,6 +230,7 @@ declare const styles: {
   readonly "border-0": string;
   readonly "border-2": string;
   readonly "border-[#1f9d55]/30": string;
+  readonly "border-[#5e5e5e]": string;
   readonly "border-[#FD5C04]": string;
   readonly "border-[#b42318]/20": string;
   readonly "border-[#dddddd]": string;
@@ -752,6 +756,7 @@ declare const styles: {
   readonly "h-[18.892px]": string;
   readonly "h-[18px]": string;
   readonly "h-[19.031px]": string;
+  readonly "h-[1em]": string;
   readonly "h-[1px]": string;
   readonly "h-[2.008px]": string;
   readonly "h-[2.037px]": string;
@@ -2071,6 +2076,7 @@ declare const styles: {
   readonly "min-h-16": string;
   readonly "min-h-4": string;
   readonly "min-h-[120px]": string;
+  readonly "min-h-[40px]": string;
   readonly "min-h-[52px]": string;
   readonly "min-h-[56px]": string;
   readonly "min-h-[60px]": string;
@@ -2094,6 +2100,7 @@ declare const styles: {
   readonly "min-w-px": string;
   readonly "mix-blend-darken": string;
   readonly "mix-blend-luminosity": string;
+  readonly "ml-0.5": string;
   readonly "ml-1": string;
   readonly "ml-1.5": string;
   readonly "ml-2": string;
@@ -2181,11 +2188,13 @@ declare const styles: {
   readonly "placeholder:text-muted-foreground": string;
   readonly "pointer-events-none": string;
   readonly "pr-1": string;
+  readonly "pr-14": string;
   readonly "pr-16": string;
   readonly "pr-2": string;
   readonly "pr-2.5": string;
   readonly "pr-20": string;
   readonly "pr-28": string;
+  readonly "pr-4": string;
   readonly "pr-6": string;
   readonly "pr-8": string;
   readonly "pt-0": string;
@@ -2788,6 +2797,7 @@ declare const styles: {
   readonly "shadow-[0px_2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[0px_8px_18px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[inset_0_0_0_1px_rgba(23,23,23,0.08),0_8px_18px_rgba(17,24,39,0.04)]": string;
+  readonly "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]": string;
   readonly "shadow-[inset_1px_0_0_rgba(221,221,221,1),inset_-1px_0_0_rgba(221,221,221,1),0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
   readonly "shadow-card": string;
   readonly "shadow-input": string;
@@ -2854,6 +2864,7 @@ declare const styles: {
   readonly "text-[#171717]": string;
   readonly "text-[#1f9d55]": string;
   readonly "text-[#292929]": string;
+  readonly "text-[#6b6b6b]": string;
   readonly "text-[#C7CDD8]": string;
   readonly "text-[#b42318]": string;
   readonly "text-[#cc9a54]": string;
