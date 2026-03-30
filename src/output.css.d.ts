@@ -189,6 +189,7 @@ declare const styles: {
   readonly "bg-background": string;
   readonly "bg-background/70": string;
   readonly "bg-background/95": string;
+  readonly "bg-black/40": string;
   readonly "bg-black/45": string;
   readonly "bg-black/50": string;
   readonly "bg-black/55": string;
@@ -562,6 +563,7 @@ declare const styles: {
   readonly "gap-6": string;
   readonly "gap-[18px]": string;
   readonly "gap-[20px]": string;
+  readonly "gap-[22px]": string;
   readonly "gap-[2px]": string;
   readonly "gap-[4px]": string;
   readonly "gap-[8px]": string;
@@ -580,6 +582,7 @@ declare const styles: {
   readonly "grid-cols-[1fr_minmax(0,1.45fr)]": string;
   readonly "grid-cols-[minmax(0,1fr)_132px]": string;
   readonly "grid-cols-[minmax(0,1fr)_146px]": string;
+  readonly "grid-cols-[minmax(0,1fr)_auto]": string;
   readonly "grid-rows-[auto_auto]": string;
   readonly "group": string;
   readonly "group-data-[collapsible=icon]:-mt-8": string;
@@ -2234,6 +2237,7 @@ declare const styles: {
   readonly "pr-2.5": string;
   readonly "pr-20": string;
   readonly "pr-28": string;
+  readonly "pr-3": string;
   readonly "pr-4": string;
   readonly "pr-6": string;
   readonly "pr-8": string;
@@ -2948,6 +2952,7 @@ declare const styles: {
   readonly "text-destructive": string;
   readonly "text-destructive-foreground": string;
   readonly "text-foreground": string;
+  readonly "text-foreground/55": string;
   readonly "text-foreground/70": string;
   readonly "text-left": string;
   readonly "text-lg": string;
@@ -3394,6 +3399,7 @@ declare const styles: {
   readonly "w-[118px]": string;
   readonly "w-[11px]": string;
   readonly "w-[122.59%]": string;
+  readonly "w-[132px]": string;
   readonly "w-[144px]": string;
   readonly "w-[145px]": string;
   readonly "w-[151px]": string;
@@ -3418,6 +3424,7 @@ declare const styles: {
   readonly "w-[88px]": string;
   readonly "w-[90px]": string;
   readonly "w-[calc(100%+2px)]": string;
+  readonly "w-[min(320px,calc(100vw-24px))]": string;
   readonly "w-[min(336px,calc(100vw-24px))]": string;
   readonly "w-[min(340px,95vw)]": string;
   readonly "w-[min(360px,95vw)]": string;
@@ -3437,6 +3444,7 @@ declare const styles: {
   readonly "z-30": string;
   readonly "z-50": string;
   readonly "z-[1]": string;
+  readonly "z-[60]": string;
   readonly "z-[70]": string;
 };
 export = styles;

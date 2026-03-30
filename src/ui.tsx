@@ -7,7 +7,6 @@ import { Checkbox } from './components/ui/checkbox'
 import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
 import { Separator } from './components/ui/separator'
-import { ScrollArea } from './components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import {
@@ -22,6 +21,7 @@ import {
   X,
   Check,
   Link,
+  Trash2,
   ArrowLeft,
   ArrowUp,
   SlidersHorizontal,
@@ -32,6 +32,7 @@ import {
 import bengaliCardImage from '../assets/bengali.png'
 import englishCardImage from '../assets/english.png'
 import gujaratiCardImage from '../assets/gujarati.png'
+import hindiCardImage from '../assets/hindi.png'
 import kannadaCardImage from '../assets/kannada.png'
 import malayalamCardImage from '../assets/malayalam.png'
 import marathiCardImage from '../assets/marathi.png'
@@ -78,6 +79,14 @@ const languageOptions: LanguageOption[] = [
     art: { kind: 'image', src: kannadaCardImage, alt: 'Kannada card illustration', className: 'max-h-[64px] max-w-[66px]' },
   },
   {
+    value: 'hi',
+    label: 'Hindi',
+    scriptLabel: 'हिंदी',
+    nativeClassName: 'font-sans',
+    selectedNativeClassName: 'font-sans font-medium',
+    art: { kind: 'image', src: hindiCardImage, alt: 'Hindi card illustration', className: 'max-h-[62px] max-w-[62px]' },
+  },
+  {
     value: 'mr',
     label: 'Marathi',
     scriptLabel: 'मराठी',
@@ -121,14 +130,6 @@ const languageOptions: LanguageOption[] = [
     nativeClassName: 'font-sans',
     selectedNativeClassName: 'font-sans font-medium',
     art: { kind: 'image', src: englishCardImage, alt: 'English card illustration', className: 'max-h-[62px] max-w-[62px]' },
-  },
-  {
-    value: 'hi',
-    label: 'Hindi',
-    scriptLabel: 'हिंदी',
-    nativeClassName: 'font-sans',
-    selectedNativeClassName: 'font-sans font-medium',
-    art: { kind: 'emoji', value: '🇮🇳' },
   },
 ]
 const bulkLanguageOptions = languageOptions.filter(o => o.value !== 'en')
@@ -525,6 +526,7 @@ function StyleMappingModal({
   sourceStyles,
   styleMappings,
   onMappingChange,
+  onDeleteHistory,
   onSave,
 }: {
   open: boolean
@@ -536,9 +538,11 @@ function StyleMappingModal({
   sourceStyles: SourceStyleRow[]
   styleMappings: Record<string, Record<string, string>>
   onMappingChange: (lang: string, key: string, value: string) => void
+  onDeleteHistory: (lang: string, keys: string[]) => void
   onSave: () => void
 }) {
   const [pickerSourceKey, setPickerSourceKey] = React.useState<string | null>(null)
+  const [showDeleteHistoryConfirm, setShowDeleteHistoryConfirm] = React.useState(false)
   const pendingActionRef = React.useRef<'scan' | 'refetch' | 'initial-load' | null>(null)
   const scanBaselineRef = React.useRef<string[]>([])
   const stylesBaselineRef = React.useRef<string[]>([])
@@ -559,6 +563,7 @@ function StyleMappingModal({
   React.useEffect(() => {
     if (!open) {
       setPickerSourceKey(null)
+      setShowDeleteHistoryConfirm(false)
       pendingActionRef.current = null
       scanBaselineRef.current = []
       stylesBaselineRef.current = []
@@ -707,7 +712,7 @@ function StyleMappingModal({
           </div>
           <button
             type="button"
-            className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-[0_2px_6px_rgba(17,24,39,0.05)] transition-colors hover:bg-muted/40"
+            className="flex h-10 w-[132px] items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-[0_2px_6px_rgba(17,24,39,0.05)] transition-colors hover:bg-muted/40"
             onClick={() => {
               mappingScrollTopRef.current = mappingScrollRef.current?.scrollTop ?? 0
               setPickerSourceKey(src.key)
@@ -726,10 +731,23 @@ function StyleMappingModal({
       )
     })
 
-  const renderSourceStyleSection = (title: string, rows: DisplaySourceStyleRow[]) => (
+  const renderSourceStyleSection = (title: string, rows: DisplaySourceStyleRow[], allowDelete = false) => (
     <div className="space-y-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-4">
       <div className="space-y-2">
-        <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
+          {allowDelete ? (
+            <button
+              type="button"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setShowDeleteHistoryConfirm(true)}
+              aria-label="Delete mapped history"
+              title="Delete mapped history"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
         <div className="h-px bg-border/80" />
       </div>
       {renderSourceStyleRows(rows)}
@@ -850,7 +868,7 @@ function StyleMappingModal({
 
               <div ref={mappingScrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                 {hasHistoryRows ? (
-                  renderSourceStyleSection(hasSelectionRows ? 'Mapped history' : 'Saved mappings', historySourceStyles)
+                  renderSourceStyleSection(hasSelectionRows ? 'Mapped history' : 'Saved mappings', historySourceStyles, true)
                 ) : null}
 
                 {hasSelectionRows ? (
@@ -886,6 +904,34 @@ function StyleMappingModal({
           </div>
         )}
       </div>
+      {showDeleteHistoryConfirm ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4" onClick={() => setShowDeleteHistoryConfirm(false)}>
+          <div
+            className="w-[min(320px,calc(100vw-24px))] rounded-lg border border-border bg-card p-4 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-foreground">Delete mapped history?</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+              This will remove all saved font style mappings from the mapped history section for {langLabel}.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1 h-9" onClick={() => setShowDeleteHistoryConfirm(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 h-9"
+                onClick={() => {
+                  onDeleteHistory(lang, historySourceStyles.map(style => style.key))
+                  setShowDeleteHistoryConfirm(false)
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1231,7 +1277,10 @@ function Plugin() {
                 setAnimatingRefineTurnIndex(null)
               }
             } else {
-              if (context.kind === 'node' && sameDisplayedNode) {
+              const shouldPreserveDisplayedThread =
+                Boolean(sameDisplayedNode && !existingThread)
+
+              if (shouldPreserveDisplayedThread) {
                 setRefineAnswer(displayedThread?.turns[displayedThread.turns.length - 1]?.content || '')
               } else {
                 setDisplayedRefineThreadKey(nextKey)
@@ -1424,7 +1473,12 @@ function Plugin() {
       displayedRefineThread &&
       (
         !activeRefineSelectionKey ||
-        (refineSelection?.kind === 'node' && refineSelection.nodeId && displayedRefineThread.nodeId === refineSelection.nodeId)
+        (
+          activeRefineSelectionKey &&
+          refineSelection?.nodeId &&
+          displayedRefineThread.nodeId === refineSelection.nodeId &&
+          !refineThreads[activeRefineSelectionKey]
+        )
       )
     )
   const visibleRefineThreadKey =
@@ -1638,7 +1692,7 @@ function Plugin() {
           <div className={isRefinePage || isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : isApiKeyPage ? 'flex min-h-0 flex-1 flex-col space-y-4 pb-2' : 'space-y-4'}>
             {activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' ? (
               <div className={isRefinePage ? 'flex min-h-0 flex-1 flex-col space-y-[8px] pt-1' : 'space-y-[8px] pt-1'}>
-                <div className="mb-[16px] flex items-end gap-[18px]">
+                <div className="mb-[16px] flex items-end gap-[20px]">
                     <button
                       type="button"
                       onClick={() => setPage('translate')}
@@ -1744,12 +1798,13 @@ function Plugin() {
                       <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          className="flex min-w-0 items-center gap-2 text-left"
+                          className="flex min-w-0 items-center gap-1 text-left"
                           onClick={() => setShowTranslationStylePicker(prev => !prev)}
                         >
                           <Wand className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="text-[12px] font-medium text-foreground">Translation Style</span>
-                          <span className="inline-flex h-6 items-center rounded-full border border-input bg-muted px-2.5 text-[11px] font-medium text-foreground">
+                          <span className="text-[12px] font-medium text-foreground/55">-</span>
+                          <span className="text-[12px] font-medium text-foreground">
                             {selectedTranslationModeLabel}
                           </span>
                         </button>
@@ -1809,7 +1864,7 @@ function Plugin() {
                   </div>
                 ) : activePage === 'refine' ? (
                   <div className="-mx-4 flex min-h-0 flex-1 flex-col">
-                    <ScrollArea ref={refineScrollRef} className="flex-1" viewportClassName="px-4 pb-3 pt-1">
+                    <div ref={refineScrollRef} className="ask-scrollbar flex-1 overflow-y-auto px-4 pb-3 pt-1 pr-3">
                       {activeRefineThread && activeRefineThread.turns.length > 0 ? (
                         <div className="space-y-3 pr-2">
                           {activeRefineThread.turns.map((turn, index) => {
@@ -1843,7 +1898,7 @@ function Plugin() {
                           })}
                         </div>
                       ) : null}
-                    </ScrollArea>
+                    </div>
 
                     <div className="mt-auto border-t border-border/80 bg-background/95 px-4 pt-2 pb-1 backdrop-blur">
                       <div className="flex flex-col gap-2">
@@ -2227,6 +2282,24 @@ function Plugin() {
                   ...prev,
                   [lang]: { ...(prev[lang] || {}), [key]: value }
                 }))
+              }}
+              onDeleteHistory={(lang, keys) => {
+                setStyleMappings(prev => {
+                  const langMap = prev[lang] || {}
+                  const nextLangMap = { ...langMap }
+                  let changed = false
+                  for (const key of keys) {
+                    if (key in nextLangMap) {
+                      delete nextLangMap[key]
+                      changed = true
+                    }
+                  }
+                  if (!changed) return prev
+                  const nextMappings = { ...prev }
+                  if (Object.keys(nextLangMap).length > 0) nextMappings[lang] = nextLangMap
+                  else delete nextMappings[lang]
+                  return nextMappings
+                })
               }}
               onSave={() => parent.postMessage({ pluginMessage: { type: 'save-style-mappings', mappings: styleMappings } }, '*')}
             />

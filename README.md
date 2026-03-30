@@ -1,3 +1,5 @@
+Designers can install and test the plugin in Figma using this guide: [Plugin install and testing doc](https://docs.google.com/document/d/1Gp1UgA_OcZsrs2bpv9uPqmHFBU1xWWMvYEkp5FndL9M/edit?usp=sharing)
+
 # Lokal Translate
 
 Lokal Translate is a Figma plugin for translating interface copy into Indian languages without leaving your design file.

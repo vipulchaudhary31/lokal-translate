@@ -3952,15 +3952,21 @@ figma.ui.onmessage = async (msg) => {
           } catch (err) {
             const errMsg = getApiErrorMessage(err, 'Translation')
             console.error(`Bulk translate error (${langLabel}):`, errMsg, err)
-            figma.ui.postMessage({ type: 'translation-error', message: `${langLabel}: ${errMsg}` })
+            let fontApplied = false
             if (type !== 'lma') {
               try {
                 const srcOverride = (type === 'translate' || type === 'dnd') ? bulkSourceStyleBefore ?? undefined : undefined
                 const applied = await applyUserDefinedStyleMapping(node, targetLang, srcOverride)
                 if (!applied) await applyFontToTextNode(node, targetLang)
+                fontApplied = true
               } catch (fontErr) {
                 debugWarn('[Bulk] Apply font after error:', fontErr)
               }
+            }
+            if (!fontApplied) {
+              figma.ui.postMessage({ type: 'translation-error', message: `${langLabel}: ${errMsg}` })
+            } else {
+              debugLog(`⏭️ Bulk API failed (${errMsg}) but font/style applied for ${langLabel}`)
             }
           }
         }
