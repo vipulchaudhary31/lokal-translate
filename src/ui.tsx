@@ -188,6 +188,95 @@ type RefineThreadState = {
   turns: RefineConversationTurn[]
 }
 
+function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
+  const segments = text.split(/(\*\*[^*]+\*\*)/g)
+  return segments.filter(Boolean).map((segment, index) => {
+    if (segment.startsWith('**') && segment.endsWith('**') && segment.length > 4) {
+      return <strong key={`${keyPrefix}-strong-${index}`} className="font-semibold text-foreground">{segment.slice(2, -2)}</strong>
+    }
+    return <React.Fragment key={`${keyPrefix}-text-${index}`}>{segment}</React.Fragment>
+  })
+}
+
+function renderAssistantContent(content: string, isAnimating: boolean): React.ReactNode {
+  const lines = content.split('\n')
+  const blocks: React.ReactNode[] = []
+  let paragraphLines: string[] = []
+  let listItems: string[] = []
+  let blockIndex = 0
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return
+    const text = paragraphLines.join(' ').trim()
+    if (text) {
+      blocks.push(
+        <p key={`paragraph-${blockIndex++}`} className="break-words whitespace-pre-wrap">
+          {renderInlineMarkdown(text, `paragraph-${blockIndex}`)}
+        </p>
+      )
+    }
+    paragraphLines = []
+  }
+
+  const flushList = () => {
+    if (listItems.length === 0) return
+    blocks.push(
+      <ul key={`list-${blockIndex++}`} className="list-disc space-y-1 pl-5">
+        {listItems.map((item, index) => (
+          <li key={`list-item-${blockIndex}-${index}`} className="break-words">
+            {renderInlineMarkdown(item, `list-${blockIndex}-${index}`)}
+          </li>
+        ))}
+      </ul>
+    )
+    listItems = []
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/)
+    const orderedMatch = line.match(/^\d+\.\s+(.*)$/)
+
+    if (!line) {
+      flushParagraph()
+      flushList()
+      continue
+    }
+
+    if (bulletMatch || orderedMatch) {
+      flushParagraph()
+      listItems.push((bulletMatch || orderedMatch)?.[1] || '')
+      continue
+    }
+
+    flushList()
+    paragraphLines.push(line)
+  }
+
+  flushParagraph()
+  flushList()
+
+  if (blocks.length === 0) {
+    return (
+      <p className="break-words whitespace-pre-wrap">
+        {renderInlineMarkdown(content, 'fallback')}
+        {isAnimating ? (
+          <span className="ml-0.5 inline-block h-[1em] w-[1px] animate-pulse bg-current align-[-0.12em]" />
+        ) : null}
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {blocks}
+      {isAnimating ? (
+        <span className="ml-0.5 inline-block h-[1em] w-[1px] animate-pulse bg-current align-[-0.12em]" />
+      ) : null}
+    </div>
+  )
+}
+
 function LanguageCardArt({
   art,
   selected,
@@ -399,6 +488,30 @@ type SourceStyleRow = {
   segmentCount?: number
 }
 
+type DisplaySourceStyleRow = SourceStyleRow & {
+  origin: 'selection' | 'history'
+}
+
+function parseSourceStyleKey(key: string): SourceStyleRow | null {
+  const [font, sizeStr, lhStr, weight] = key.split('|')
+  const parsedSize = Number(sizeStr)
+  const parsedLineHeight = lhStr === 'auto' ? null : Number(lhStr)
+
+  if (!font || !weight || !Number.isFinite(parsedSize)) return null
+
+  return {
+    key,
+    font,
+    size: parsedSize,
+    lh: Number.isFinite(parsedLineHeight) ? parsedLineHeight : null,
+    weight,
+  }
+}
+
+function formatSourceStyleLabel(style: SourceStyleRow): string {
+  return `${style.font} ${style.size}px ${style.weight}${style.decoration ? ` (${style.decoration.toLowerCase()})` : ''}${style.segmentCount && style.segmentCount > 1 ? ` (${style.segmentCount})` : ''}`
+}
+
 function StyleOptionPickerModal({
   open,
   sourceLabel,
@@ -525,20 +638,30 @@ function StyleMappingModal({
   }, [open])
 
   const langMap = styleMappings[lang] || {}
-
-  const mappedSourceStyles: SourceStyleRow[] = Object.keys(langMap).map((key) => {
-    const [font, sizeStr, lhStr, weight] = key.split('|')
-    const parsedSize = Number(sizeStr)
-    const parsedLineHeight = lhStr === 'auto' ? null : Number(lhStr)
-    return {
-      key,
-      font: font || 'Unknown',
-      size: Number.isFinite(parsedSize) ? parsedSize : 0,
-      lh: Number.isFinite(parsedLineHeight) ? parsedLineHeight : null,
-      weight: weight || 'Regular',
-    }
-  })
-  const displaySourceStyles: SourceStyleRow[] = sourceStyles.length > 0 ? sourceStyles : mappedSourceStyles
+  const savedMappedKeys = new Set(
+    Object.entries(langMap)
+      .filter(([, value]) => typeof value === 'string' && value.trim().length > 0 && value !== 'skip')
+      .map(([key]) => key)
+  )
+  const selectionSourceStyles: DisplaySourceStyleRow[] = sourceStyles.map((style) => ({
+    ...style,
+    origin: savedMappedKeys.has(style.key) ? 'history' : 'selection',
+  }))
+  const savedOnlyMappedSourceStyles: DisplaySourceStyleRow[] = Object.entries(langMap)
+    .filter(([, value]) => typeof value === 'string' && value.trim().length > 0 && value !== 'skip')
+    .map(([key]) => parseSourceStyleKey(key))
+    .filter((style): style is SourceStyleRow => style !== null)
+    .filter((style) => !selectionSourceStyles.some((selectionStyle) => selectionStyle.key === style.key))
+    .map((style) => ({
+      ...style,
+      origin: 'history',
+    }))
+  const historySourceStyles: DisplaySourceStyleRow[] = [
+    ...selectionSourceStyles.filter((style) => style.origin === 'history'),
+    ...savedOnlyMappedSourceStyles,
+  ]
+  const newSelectionSourceStyles: DisplaySourceStyleRow[] = selectionSourceStyles.filter((style) => style.origin === 'selection')
+  const displaySourceStyles: DisplaySourceStyleRow[] = [...historySourceStyles, ...newSelectionSourceStyles]
   const pickerSource = displaySourceStyles.find(src => src.key === pickerSourceKey) || null
 
   React.useEffect(() => {
@@ -618,10 +741,12 @@ function StyleMappingModal({
 
   const canAutoApply = sourceStyles.length > 0 && availableStyles.length > 0
   const hasDisplayRows = displaySourceStyles.length > 0
+  const hasSelectionRows = newSelectionSourceStyles.length > 0
+  const hasHistoryRows = historySourceStyles.length > 0
   const scanButtonLabel = 'Scan selection'
 
   const handleScanSelection = () => {
-    scanBaselineRef.current = displaySourceStyles.map(style => style.key)
+    scanBaselineRef.current = sourceStyles.map(style => style.key)
     pendingActionRef.current = 'scan'
     parent.postMessage({ pluginMessage: { type: 'scan-selection' } }, '*')
   }
@@ -631,6 +756,46 @@ function StyleMappingModal({
     pendingActionRef.current = 'refetch'
     parent.postMessage({ pluginMessage: { type: 'get-styles-for-font', fontFamily: fontForLang } }, '*')
   }
+
+  const renderSourceStyleRows = (rows: DisplaySourceStyleRow[]) =>
+    rows.map((src) => {
+      const current = langMap[src.key] ?? ''
+      const selectedStyle = availableStyles.find(s => s.id === current)
+
+      return (
+        <div key={src.key} className="grid grid-cols-[minmax(0,1fr)_132px] items-start gap-2">
+          <div className="min-w-0 pt-1">
+            <span className="line-clamp-2 text-[12px] leading-4.5 text-foreground" title={src.key}>
+              {formatSourceStyleLabel(src)}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-sm transition-colors hover:bg-muted/40"
+            onClick={() => setPickerSourceKey(src.key)}
+          >
+            {selectedStyle ? (
+              <div className="min-w-0 truncate text-[12px] leading-4 text-foreground">
+                {selectedStyle.name}{selectedStyle.sizeStr ? ` • ${selectedStyle.sizeStr.replace('px / ', '/')}` : ''}
+              </div>
+            ) : (
+              <div className="min-w-0 truncate text-[12px] leading-4 text-muted-foreground">No mapping</div>
+            )}
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        </div>
+      )
+    })
+
+  const renderSourceStyleSection = (title: string, rows: DisplaySourceStyleRow[]) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      {renderSourceStyleRows(rows)}
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -685,34 +850,16 @@ function StyleMappingModal({
                 ) : null}
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
-                {displaySourceStyles.map((src) => {
-                  const current = langMap[src.key] ?? ''
-                  const selectedStyle = availableStyles.find(s => s.id === current)
-                  return (
-                    <div key={src.key} className="grid grid-cols-[minmax(0,1fr)_132px] items-start gap-2">
-                      <span className="line-clamp-2 pt-1 text-[12px] leading-4.5 text-foreground" title={src.key}>
-                        {src.font} {src.size}px {src.weight}
-                        {src.decoration ? ` (${src.decoration.toLowerCase()})` : ''}
-                        {src.segmentCount && src.segmentCount > 1 ? ` (${src.segmentCount})` : ''}
-                      </span>
-                      <button
-                        type="button"
-                        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-sm transition-colors hover:bg-muted/40"
-                        onClick={() => setPickerSourceKey(src.key)}
-                      >
-                        {selectedStyle ? (
-                          <div className="min-w-0 truncate text-[12px] leading-4 text-foreground">
-                            {selectedStyle.name}{selectedStyle.sizeStr ? ` • ${selectedStyle.sizeStr.replace('px / ', '/')}` : ''}
-                          </div>
-                        ) : (
-                          <div className="min-w-0 truncate text-[12px] leading-4 text-muted-foreground">No mapping</div>
-                        )}
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    </div>
-                  )
-                })}
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+                {hasHistoryRows ? (
+                  renderSourceStyleSection(hasSelectionRows ? 'Mapped history' : 'Saved mappings', historySourceStyles)
+                ) : null}
+
+                {hasSelectionRows ? (
+                  hasHistoryRows
+                    ? renderSourceStyleSection('New from selection', newSelectionSourceStyles)
+                    : <div className="space-y-2">{renderSourceStyleRows(newSelectionSourceStyles)}</div>
+                ) : null}
               </div>
             </>
           ) : (
@@ -744,9 +891,7 @@ function StyleMappingModal({
       <StyleOptionPickerModal
         open={pickerSource !== null}
         sourceLabel={
-          pickerSource
-            ? `${pickerSource.font} ${pickerSource.size}px ${pickerSource.weight}${pickerSource.decoration ? ` (${pickerSource.decoration.toLowerCase()})` : ''}`
-            : ''
+          pickerSource ? formatSourceStyleLabel(pickerSource) : ''
         }
         currentValue={pickerSource ? langMap[pickerSource.key] ?? '' : ''}
         availableStyles={availableStyles}
@@ -1470,7 +1615,7 @@ function Plugin() {
   if (!apiKeyLoaded) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-background font-sans antialiased">
-        <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
+        <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-4">
           <Card className="w-full rounded-lg border border-border bg-card shadow-[0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]">
             <CardContent className="flex items-center justify-center gap-2 px-4 py-6 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1485,7 +1630,7 @@ function Plugin() {
   return (
     <div className="flex flex-col h-full min-h-0 bg-background font-sans antialiased">
       <div className={`flex-1 min-h-0 ${isRefinePage || isDedicatedPrefsPage ? 'overflow-hidden' : 'overflow-y-auto scrollbar-none fade-scroll-y'}`}>
-        <div className={`px-5 py-4 ${isRefinePage || isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
+        <div className={`px-4 ${isRefinePage ? 'pt-4 pb-2' : 'py-4'} ${isRefinePage || isDedicatedPrefsPage ? 'flex h-full min-h-0 flex-col' : ''}`}>
           <div className={isRefinePage || isDedicatedPrefsPage ? 'flex min-h-0 flex-1 flex-col' : isApiKeyPage ? 'flex min-h-0 flex-1 flex-col space-y-4 pb-2' : 'space-y-4'}>
             {activePage === 'translate' || activePage === 'refine' || activePage === 'fontSwap' ? (
               <div className={isRefinePage ? 'flex min-h-0 flex-1 flex-col space-y-[8px] pt-1' : 'space-y-[8px] pt-1'}>
@@ -1520,7 +1665,7 @@ function Plugin() {
                 </div>
                 {activePage === 'translate' ? (
                   <div className="space-y-4">
-                    <div ref={cardRailWrapperRef} className="relative z-10 -mx-5">
+                    <div ref={cardRailWrapperRef} className="relative z-10 -mx-4">
                       {selectedCardShadow ? (
                         <span
                           className="pointer-events-none absolute rounded-[8px] shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]
@@ -1534,7 +1679,7 @@ function Plugin() {
                           aria-hidden="true"
                         />
                       ) : null}
-                      <div ref={cardRailViewportRef} className="overflow-x-auto scrollbar-none fade-scroll-x px-5">
+                      <div ref={cardRailViewportRef} className="overflow-x-auto scrollbar-none fade-scroll-x px-4">
                         <div className="flex w-max gap-5 pt-0 pb-1">
                           {languageOptions.map(option => (
                             <LanguageCard
@@ -1659,49 +1804,46 @@ function Plugin() {
                     )}
                   </div>
                 ) : activePage === 'refine' ? (
-                  <div className="-mx-5 flex min-h-0 flex-1 flex-col">
-                    <ScrollArea ref={refineScrollRef} className="flex-1" viewportClassName="px-5 pb-3 pt-1">
+                  <div className="-mx-4 flex min-h-0 flex-1 flex-col">
+                    <ScrollArea ref={refineScrollRef} className="flex-1" viewportClassName="px-4 pb-3 pt-1">
                       {activeRefineThread && activeRefineThread.turns.length > 0 ? (
                         <div className="space-y-3 pr-2">
-                          {activeRefineThread.turns.map((turn, index) => (
-                            <div
-                              key={`${turn.role}-${index}`}
-                              data-refine-message={index === activeRefineThread.turns.length - 1 ? 'latest' : undefined}
-                              data-refine-turn-index={index}
-                              data-refine-turn-role={turn.role}
-                              className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
+                          {activeRefineThread.turns.map((turn, index) => {
+                            const isAssistantAnimating = Boolean(
+                              turn.role === 'assistant'
+                              && visibleRefineThreadKey === animatingRefineThreadKey
+                              && index === animatingRefineTurnIndex
+                              && animatingRefineTarget
+                            )
+                            const turnContent = isAssistantAnimating ? refineAnswer : turn.content
+
+                            return (
                               <div
-                                className={`max-w-[92%] rounded-[22px] px-4 py-3 text-sm leading-relaxed shadow-[0_14px_30px_rgba(17,24,39,0.04)] ${
-                                  turn.role === 'user'
-                                    ? 'border border-border/80 bg-[#f3f3f1] text-foreground'
-                                    : 'border border-border/80 bg-card text-foreground'
-                                }`}
+                                key={`${turn.role}-${index}`}
+                                data-refine-message={index === activeRefineThread.turns.length - 1 ? 'latest' : undefined}
+                                data-refine-turn-index={index}
+                                data-refine-turn-role={turn.role}
+                                className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
                               >
-                                <p className="whitespace-pre-wrap break-words">
-                                  {turn.role === 'assistant'
-                                    && visibleRefineThreadKey === animatingRefineThreadKey
-                                    && index === animatingRefineTurnIndex
-                                    && animatingRefineTarget
-                                    ? refineAnswer
-                                    : turn.content}
-                                  {turn.role === 'assistant'
-                                    && visibleRefineThreadKey === animatingRefineThreadKey
-                                    && index === animatingRefineTurnIndex
-                                    && animatingRefineTarget ? (
-                                      <span className="ml-0.5 inline-block h-[1em] w-[1px] animate-pulse bg-current align-[-0.12em]" />
-                                    ) : null}
-                                </p>
+                                {turn.role === 'user' ? (
+                                  <div className="max-w-[88%] rounded-[18px] border border-border/80 bg-card px-4 py-1.5 text-sm leading-relaxed text-foreground shadow-[0_10px_24px_rgba(17,24,39,0.04)]">
+                                    <p className="whitespace-pre-wrap break-words">{turn.content}</p>
+                                  </div>
+                                ) : (
+                                  <div className="max-w-[92%] px-1 py-1.5 text-sm leading-relaxed text-foreground">
+                                    {renderAssistantContent(turnContent, isAssistantAnimating)}
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       ) : null}
                     </ScrollArea>
 
-                    <div className="mt-auto border-t border-border/80 bg-background/95 px-5 py-2 backdrop-blur">
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between gap-2">
+                    <div className="mt-auto border-t border-border/80 bg-background/95 px-4 pt-2 pb-1 backdrop-blur">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex min-h-8 items-center justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                               <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
@@ -1752,7 +1894,7 @@ function Plugin() {
                           ) : null}
                         </div>
 
-                        <div className="rounded-[22px] border border-border bg-card px-3 py-2 shadow-[0_16px_32px_rgba(17,24,39,0.06)]">
+                        <div className="rounded-[16px] border border-border bg-card px-3 pt-2 pb-2 shadow-[0_16px_32px_rgba(17,24,39,0.06)]">
                           <textarea
                             value={refinePrompt}
                             onChange={event => setRefinePrompt(event.target.value)}
@@ -1766,7 +1908,7 @@ function Plugin() {
                             }}
                             rows={1}
                             placeholder='Rewrite, shorten, localize, or explain the selected text.'
-                            className="scrollbar-none min-h-[56px] max-h-[120px] w-full resize-none border-0 bg-transparent py-1 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground"
+                            className="scrollbar-none min-h-[56px] max-h-[120px] w-full resize-none border-0 bg-transparent pt-1 pb-1 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground"
                           />
                           <div className="mt-0.5 flex items-center justify-end">
                             <Button
@@ -2089,10 +2231,10 @@ function Plugin() {
         </div>
       </div>
       {activePage === 'translate' || activePage === 'fontSwap' ? (
-        <div className="relative bg-background px-5 pb-3 pt-2">
+        <div className="relative bg-background px-4 pb-3 pt-2">
           <div className="pointer-events-none absolute inset-x-0 -top-4 h-4 bg-gradient-to-b from-transparent via-background/88 to-background" />
           {activePage === 'translate' ? (
-            <div className="-mx-5 overflow-x-auto scrollbar-none fade-scroll-x px-5">
+            <div className="-mx-4 overflow-x-auto scrollbar-none fade-scroll-x px-4">
               <div className="flex w-max items-center gap-4">
                 <TooltipProvider>
                   <Tooltip>
