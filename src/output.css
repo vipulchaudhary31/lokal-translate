@@ -7961,6 +7961,10 @@
     border-top-style: var(--tw-border-style);
     border-top-width: 1px;
   }
+  .border-t-2 {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 2px;
+  }
   .border-r {
     border-right-style: var(--tw-border-style);
     border-right-width: 1px;
@@ -7980,6 +7984,10 @@
   .border-dashed {
     --tw-border-style: dashed;
     border-style: dashed;
+  }
+  .border-dotted {
+    --tw-border-style: dotted;
+    border-style: dotted;
   }
   .border-solid {
     --tw-border-style: solid;
@@ -8198,6 +8206,12 @@
   .bg-background {
     background-color: var(--background);
   }
+  .bg-background\/70 {
+    background-color: var(--background);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--background) 70%, transparent);
+    }
+  }
   .bg-background\/95 {
     background-color: var(--background);
     @supports (color: color-mix(in lab, red, red)) {
@@ -8307,6 +8321,12 @@
     background-color: var(--muted);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--muted) 20%, transparent);
+    }
+  }
+  .bg-muted\/25 {
+    background-color: var(--muted);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--muted) 25%, transparent);
     }
   }
   .bg-muted\/30 {
@@ -9150,6 +9170,10 @@
   }
   .shadow-\[0_0_16px_rgba\(17\,24\,39\,0\.045\)\,0_10px_18px_rgba\(17\,24\,39\,0\.055\)\] {
     --tw-shadow: 0 0 16px var(--tw-shadow-color, rgba(17,24,39,0.045)), 0 10px 18px var(--tw-shadow-color, rgba(17,24,39,0.055));
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .shadow-\[0_2px_6px_rgba\(17\,24\,39\,0\.05\)\] {
+    --tw-shadow: 0 2px 6px var(--tw-shadow-color, rgba(17,24,39,0.05));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
   .shadow-\[0_4px_12px_rgba\(17\,24\,39\,0\.04\)\] {

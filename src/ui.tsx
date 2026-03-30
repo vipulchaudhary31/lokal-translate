@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import {
   Loader2,
   Info,
-  Sparkles,
+  Zap,
   Wand,
   ChevronDown,
   ChevronRight,
@@ -512,83 +512,6 @@ function formatSourceStyleLabel(style: SourceStyleRow): string {
   return `${style.font} ${style.size}px ${style.weight}${style.decoration ? ` (${style.decoration.toLowerCase()})` : ''}${style.segmentCount && style.segmentCount > 1 ? ` (${style.segmentCount})` : ''}`
 }
 
-function StyleOptionPickerModal({
-  open,
-  sourceLabel,
-  currentValue,
-  availableStyles,
-  onClose,
-  onSelect,
-}: {
-  open: boolean
-  sourceLabel: string
-  currentValue: string
-  availableStyles: StyleOption[]
-  onClose: () => void
-  onSelect: (value: string) => void
-}) {
-  if (!open) return null
-
-  const options = [
-    { id: '__none__', title: 'No mapping' },
-    ...availableStyles.map(style => ({
-      id: style.id,
-      title: `${style.name}${style.sizeStr ? ` • ${style.sizeStr.replace('px / ', '/')}` : ''}`,
-    })),
-  ]
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 px-4" onClick={onClose}>
-      <div
-        className="flex max-h-[78vh] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Choose target style</p>
-            <p className="mt-1 truncate text-[12px] text-muted-foreground">{sourceLabel}</p>
-          </div>
-          <button
-            type="button"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={onClose}
-            aria-label="Close style picker"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none fade-scroll-y p-2">
-          <div className="space-y-1">
-            {options.map(option => {
-              const selected = currentValue === option.id || (!currentValue && option.id === '__none__')
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`flex h-10 w-full items-center gap-2 rounded-md px-3 text-left transition-colors ${
-                    selected
-                      ? 'bg-accent/12 text-foreground'
-                      : 'text-foreground hover:bg-muted/70'
-                  }`}
-                  onClick={() => {
-                    onSelect(option.id)
-                    onClose()
-                  }}
-                >
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                    {selected ? <Check className="h-3.5 w-3.5 text-accent" /> : null}
-                  </span>
-                  <span className="truncate text-[13px] leading-5">{option.title}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function StyleMappingModal({
   open,
   onClose,
@@ -616,6 +539,8 @@ function StyleMappingModal({
   const pendingActionRef = React.useRef<'scan' | 'refetch' | 'initial-load' | null>(null)
   const scanBaselineRef = React.useRef<string[]>([])
   const stylesBaselineRef = React.useRef<string[]>([])
+  const mappingScrollRef = React.useRef<HTMLDivElement | null>(null)
+  const mappingScrollTopRef = React.useRef(0)
 
   const notifyInFigma = React.useCallback((message: string, error = false) => {
     parent.postMessage({ pluginMessage: { type: 'style-mapping-notify', message, error } }, '*')
@@ -634,6 +559,7 @@ function StyleMappingModal({
       pendingActionRef.current = null
       scanBaselineRef.current = []
       stylesBaselineRef.current = []
+      mappingScrollTopRef.current = 0
     }
   }, [open])
 
@@ -720,6 +646,13 @@ function StyleMappingModal({
     return () => window.removeEventListener('message', handler)
   }, [fontForLang, notifyInFigma, open])
 
+  React.useLayoutEffect(() => {
+    if (pickerSource || !open) return
+    const viewport = mappingScrollRef.current
+    if (!viewport) return
+    viewport.scrollTop = mappingScrollTopRef.current
+  }, [open, pickerSource])
+
   if (!open) return null
 
   const handleAutoApply = () => {
@@ -763,16 +696,19 @@ function StyleMappingModal({
       const selectedStyle = availableStyles.find(s => s.id === current)
 
       return (
-        <div key={src.key} className="grid grid-cols-[minmax(0,1fr)_132px] items-start gap-2">
-          <div className="min-w-0 pt-1">
+        <div key={src.key} className="grid grid-cols-[minmax(0,1fr)_132px] items-start gap-3">
+          <div className="min-w-0 pt-0.5">
             <span className="line-clamp-2 text-[12px] leading-4.5 text-foreground" title={src.key}>
               {formatSourceStyleLabel(src)}
             </span>
           </div>
           <button
             type="button"
-            className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-sm transition-colors hover:bg-muted/40"
-            onClick={() => setPickerSourceKey(src.key)}
+            className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left shadow-[0_2px_6px_rgba(17,24,39,0.05)] transition-colors hover:bg-muted/40"
+            onClick={() => {
+              mappingScrollTopRef.current = mappingScrollRef.current?.scrollTop ?? 0
+              setPickerSourceKey(src.key)
+            }}
           >
             {selectedStyle ? (
               <div className="min-w-0 truncate text-[12px] leading-4 text-foreground">
@@ -788,14 +724,22 @@ function StyleMappingModal({
     })
 
   const renderSourceStyleSection = (title: string, rows: DisplaySourceStyleRow[]) => (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-4">
+      <div className="space-y-2">
         <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
-        <div className="h-px flex-1 bg-border" />
+        <div className="h-px bg-border/80" />
       </div>
       {renderSourceStyleRows(rows)}
     </div>
   )
+
+  const pickerOptions = [
+    { id: '__none__', title: 'No mapping' },
+    ...availableStyles.map(style => ({
+      id: style.id,
+      title: `${style.name}${style.sizeStr ? ` • ${style.sizeStr.replace('px / ', '/')}` : ''}`,
+    })),
+  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -804,24 +748,75 @@ function StyleMappingModal({
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <span className="text-sm font-semibold">Font style mapping - {langLabel}</span>
-          <button
-            type="button"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col px-4 py-4">
-          {hasDisplayRows ? (
+          {pickerSource ? (
             <>
-              <div className="mb-3 flex items-center justify-end gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Choose target style</p>
+                <p className="mt-1 truncate text-[12px] text-muted-foreground">{formatSourceStyleLabel(pickerSource)}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => setPickerSourceKey(null)}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-sm font-semibold">Font style mapping - {langLabel}</span>
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          )}
+        </div>
+        <div className={`flex min-h-0 flex-1 flex-col px-4 ${pickerSource ? 'pt-3 pb-2' : 'py-4'}`}>
+          {pickerSource ? (
+            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none fade-scroll-y">
+              <div className="space-y-1">
+                {pickerOptions.map(option => {
+                  const selected = (langMap[pickerSource.key] ?? '') === option.id || (!(langMap[pickerSource.key] ?? '') && option.id === '__none__')
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`flex h-10 w-full items-center gap-2 rounded-md px-3 text-left transition-colors ${
+                        selected
+                          ? 'bg-accent/12 text-foreground'
+                          : 'text-foreground hover:bg-muted/70'
+                      }`}
+                      onClick={() => {
+                        onMappingChange(
+                          lang,
+                          pickerSource.key,
+                          option.id === '__none__' ? '' : option.id
+                        )
+                        setPickerSourceKey(null)
+                      }}
+                    >
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                        {selected ? <Check className="h-3.5 w-3.5 text-accent" /> : null}
+                      </span>
+                      <span className="truncate text-[13px] leading-5">{option.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : hasDisplayRows ? (
+            <>
+              <div className="mb-3 flex items-center justify-start gap-4">
                 <Button
                   variant="link"
                   size="sm"
-                  className="h-auto px-0 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+                  className="h-auto gap-1.5 px-0 text-[12px] font-medium text-muted-foreground hover:text-foreground"
                   onClick={handleScanSelection}
                   title="Find source styles in your selection"
                 >
@@ -840,17 +835,17 @@ function StyleMappingModal({
                   <Button
                     variant="link"
                     size="sm"
-                    className="h-auto px-0 text-[13px] font-medium text-[#1f9d55] hover:text-[#1f9d55]/80"
+                    className="h-auto gap-1.5 px-0 text-[13px] font-medium text-[#1f9d55] hover:text-[#1f9d55]/80"
                     onClick={handleAutoApply}
                     title="Auto-match source styles to target by size and weight"
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
+                    <Zap className="h-3.5 w-3.5" />
                     Auto apply
                   </Button>
                 ) : null}
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
+              <div ref={mappingScrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto scrollbar-none fade-scroll-y pr-1">
                 {hasHistoryRows ? (
                   renderSourceStyleSection(hasSelectionRows ? 'Mapped history' : 'Saved mappings', historySourceStyles)
                 ) : null}
@@ -858,7 +853,7 @@ function StyleMappingModal({
                 {hasSelectionRows ? (
                   hasHistoryRows
                     ? renderSourceStyleSection('New from selection', newSelectionSourceStyles)
-                    : <div className="space-y-2">{renderSourceStyleRows(newSelectionSourceStyles)}</div>
+                    : <div className="space-y-3">{renderSourceStyleRows(newSelectionSourceStyles)}</div>
                 ) : null}
               </div>
             </>
@@ -881,30 +876,13 @@ function StyleMappingModal({
             </div>
           )}
         </div>
-        {hasDisplayRows && (
+        {hasDisplayRows && !pickerSource && (
           <div className="p-4 border-t border-border flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 h-10" onClick={onClose}>Cancel</Button>
             <Button size="sm" className="flex-1 h-10" onClick={() => { onSave(); onClose(); }}>Save mappings</Button>
           </div>
         )}
       </div>
-      <StyleOptionPickerModal
-        open={pickerSource !== null}
-        sourceLabel={
-          pickerSource ? formatSourceStyleLabel(pickerSource) : ''
-        }
-        currentValue={pickerSource ? langMap[pickerSource.key] ?? '' : ''}
-        availableStyles={availableStyles}
-        onClose={() => setPickerSourceKey(null)}
-        onSelect={(value) => {
-          if (!pickerSource) return
-          onMappingChange(
-            lang,
-            pickerSource.key,
-            value === '__none__' ? '' : value
-          )
-        }}
-      />
     </div>
   )
 }
