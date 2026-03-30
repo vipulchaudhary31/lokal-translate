@@ -30,6 +30,7 @@ import {
   Plug,
 } from 'lucide-react'
 import bengaliCardImage from '../assets/bengali.png'
+import englishCardImage from '../assets/english.png'
 import gujaratiCardImage from '../assets/gujarati.png'
 import kannadaCardImage from '../assets/kannada.png'
 import malayalamCardImage from '../assets/malayalam.png'
@@ -119,7 +120,7 @@ const languageOptions: LanguageOption[] = [
     scriptLabel: 'English',
     nativeClassName: 'font-sans',
     selectedNativeClassName: 'font-sans font-medium',
-    art: { kind: 'emoji', value: '🇬🇧' },
+    art: { kind: 'image', src: englishCardImage, alt: 'English card illustration', className: 'max-h-[62px] max-w-[62px]' },
   },
   {
     value: 'hi',
@@ -321,7 +322,9 @@ function LanguageCard({
       className="relative h-[130px] w-[100px] shrink-0 text-center transition-[transform,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171717]/15"
     >
       <div
-        className="relative z-10 flex h-full flex-col items-center gap-1 overflow-hidden rounded-[8px] border border-input bg-white pb-2 [backface-visibility:hidden] [transform:translateZ(0)]"
+        className={`relative z-10 flex h-full flex-col items-center gap-1 overflow-hidden rounded-[8px] bg-white pb-2 [backface-visibility:hidden] [transform:translateZ(0)] ${
+          selected ? 'border border-input border-t-0' : 'border border-input'
+        }`}
         style={{ clipPath: 'inset(0 round 8px)' }}
       >
         <div
@@ -890,7 +893,7 @@ function StyleMappingModal({
 function BrandingStrip() {
   return (
     <a
-      href="https://medium.com/lokal-design"
+      href="https://lokalapps.com"
       target="_blank"
       rel="noreferrer"
       className="flex shrink-0 items-center"
@@ -1646,7 +1649,7 @@ function Plugin() {
                     <div ref={cardRailWrapperRef} className="relative z-10 -mx-4">
                       {selectedCardShadow ? (
                         <span
-                          className="pointer-events-none absolute rounded-[8px] shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]
+                          className="pointer-events-none absolute rounded-[8px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.08)]
 "
                           style={{
                             left: `${selectedCardShadow.left}px`,

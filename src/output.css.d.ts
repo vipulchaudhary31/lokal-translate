@@ -37,6 +37,7 @@ declare const styles: {
   readonly "-translate-x-1": string;
   readonly "-translate-x-1/2": string;
   readonly "-translate-x-px": string;
+  readonly "-translate-y-0.5": string;
   readonly "-translate-y-1": string;
   readonly "-translate-y-1/2": string;
   readonly "@container/card-header": string;
@@ -175,8 +176,10 @@ declare const styles: {
   readonly "bg-[#f78430]": string;
   readonly "bg-[linear-gradient(180deg,#dce8f7_0%,#f3efdf_68%,#e7d7be_100%)]": string;
   readonly "bg-[linear-gradient(180deg,rgba(232,219,194,0)_0%,rgba(227,213,188,0.95)_100%)]": string;
+  readonly "bg-[linear-gradient(180deg,rgba(255,191,53,0.12),rgba(255,191,53,0.03))]": string;
   readonly "bg-[linear-gradient(90deg,#de04f1_0%,#f84f29_50%,#fda900_100%)]": string;
   readonly "bg-[radial-gradient(circle_at_16%_62%,rgba(255,255,255,0.92)_0_18px,transparent_19px),radial-gradient(circle_at_48%_32%,rgba(255,255,255,0.88)_0_22px,transparent_23px),radial-gradient(circle_at_82%_58%,rgba(255,255,255,0.84)_0_18px,transparent_19px)]": string;
+  readonly "bg-[rgba(23,23,23,0.08)]": string;
   readonly "bg-[rgba(97,96,97,0.16)]": string;
   readonly "bg-[rgba(97,96,97,0.2)]": string;
   readonly "bg-accent": string;
@@ -249,6 +252,10 @@ declare const styles: {
   readonly "border-[#f0f0f0]": string;
   readonly "border-[1.5px]": string;
   readonly "border-[rgba(0,0,0,0.04)]": string;
+  readonly "border-[rgba(216,200,167,0.38)]": string;
+  readonly "border-[rgba(216,200,167,0.9)]": string;
+  readonly "border-[rgba(23,23,23,0.08)]": string;
+  readonly "border-[rgba(255,191,53,0.35)]": string;
   readonly "border-accent/40": string;
   readonly "border-b": string;
   readonly "border-b-[3px]": string;
@@ -276,6 +283,7 @@ declare const styles: {
   readonly "border-sidebar-border": string;
   readonly "border-solid": string;
   readonly "border-t": string;
+  readonly "border-t-0": string;
   readonly "border-t-2": string;
   readonly "border-t-transparent": string;
   readonly "border-transparent": string;
@@ -2159,6 +2167,7 @@ declare const styles: {
   readonly "opacity-61": string;
   readonly "opacity-70": string;
   readonly "opacity-90": string;
+  readonly "opacity-95": string;
   readonly "origin-(--radix-context-menu-content-transform-origin)": string;
   readonly "origin-(--radix-dropdown-menu-content-transform-origin)": string;
   readonly "origin-(--radix-hover-card-content-transform-origin)": string;
@@ -2804,6 +2813,8 @@ declare const styles: {
   readonly "shadow-[0_0_0_1px_hsl(var(--sidebar-border))]": string;
   readonly "shadow-[0_0_16px_rgba(17,24,39,0.045),0_10px_18px_rgba(17,24,39,0.055)]": string;
   readonly "shadow-[0_10px_18px_rgba(17,24,39,0.055),0_3px_8px_rgba(17,24,39,0.03)]": string;
+  readonly "shadow-[0_10px_18px_rgba(17,24,39,0.08)]": string;
+  readonly "shadow-[0_10px_20px_-8px_rgba(17,24,39,0.18),0_2px_6px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0_10px_20px_rgba(17,24,39,0.07),0_2px_6px_rgba(17,24,39,0.03)]": string;
   readonly "shadow-[0_10px_24px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_10px_24px_rgba(17,24,39,0.08),0_3px_8px_rgba(17,24,39,0.03)]": string;
@@ -2828,11 +2839,13 @@ declare const styles: {
   readonly "shadow-[0_2px_6px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[0_4px_12px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[0_4px_12px_rgba(17,24,39,0.05)]": string;
+  readonly "shadow-[0_8px_20px_rgba(17,24,39,0.06)]": string;
   readonly "shadow-[0px_-2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[0px_2px_12px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[0px_8px_18px_0px_rgba(0,0,0,0.08)]": string;
   readonly "shadow-[inset_0_0_0_1px_rgba(23,23,23,0.08),0_8px_18px_rgba(17,24,39,0.04)]": string;
   readonly "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]": string;
+  readonly "shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_8px_16px_rgba(17,24,39,0.05)]": string;
   readonly "shadow-[inset_1px_0_0_rgba(221,221,221,1),inset_-1px_0_0_rgba(221,221,221,1),0_20px_44px_rgba(17,24,39,0.045),0_6px_18px_rgba(17,24,39,0.02)]": string;
   readonly "shadow-card": string;
   readonly "shadow-input": string;
