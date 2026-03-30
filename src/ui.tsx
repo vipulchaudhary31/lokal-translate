@@ -7,6 +7,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Card, CardContent } from './components/ui/card'
 import { Label } from './components/ui/label'
 import { Separator } from './components/ui/separator'
+import { ScrollArea } from './components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import {
@@ -802,6 +803,9 @@ function Plugin() {
   const [refineAnswer, setRefineAnswer] = React.useState('')
   const [displayedRefineThreadKey, setDisplayedRefineThreadKey] = React.useState<string | null>(null)
   const [refineScrollTarget, setRefineScrollTarget] = React.useState<{ key: string; index: number } | null>(null)
+  const [animatingRefineThreadKey, setAnimatingRefineThreadKey] = React.useState<string | null>(null)
+  const [animatingRefineTurnIndex, setAnimatingRefineTurnIndex] = React.useState<number | null>(null)
+  const [animatingRefineTarget, setAnimatingRefineTarget] = React.useState('')
 
   const [targetFont, setTargetFont] = React.useState('Noto Sans')
   const [isSwapping, setIsSwapping] = React.useState(false)
@@ -980,6 +984,47 @@ function Plugin() {
   }, [page, loadRefineContext, getRefineThreadKey])
 
   React.useEffect(() => {
+    if (!animatingRefineTarget) return
+
+    const totalChars = animatingRefineTarget.length
+    if (totalChars === 0) return
+    let cancelled = false
+    let timeoutId = 0
+    let frameId = 0
+    const startedAt = performance.now()
+    const duration = Math.min(1600, Math.max(320, totalChars * 16))
+
+    const tick = () => {
+      if (cancelled) return
+      const elapsed = performance.now() - startedAt
+      const progress = Math.min(1, elapsed / duration)
+      const nextLength = Math.max(1, Math.ceil(totalChars * progress))
+      setRefineAnswer(animatingRefineTarget.slice(0, nextLength))
+
+      if (progress >= 1) {
+        setRefineAnswer(animatingRefineTarget)
+        setAnimatingRefineTarget('')
+        setAnimatingRefineThreadKey(null)
+        setAnimatingRefineTurnIndex(null)
+        return
+      }
+
+      timeoutId = window.setTimeout(() => {
+        frameId = window.requestAnimationFrame(tick)
+      }, 18)
+    }
+
+    setRefineAnswer('')
+    frameId = window.requestAnimationFrame(tick)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [animatingRefineTarget, animatingRefineThreadKey, animatingRefineTurnIndex])
+
+  React.useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data.pluginMessage
       if (!msg) return
@@ -1033,6 +1078,9 @@ function Plugin() {
         case 'refine-selection-changed':
           if (page === 'refine') {
             setRefineAnswer('')
+            setAnimatingRefineTarget('')
+            setAnimatingRefineThreadKey(null)
+            setAnimatingRefineTurnIndex(null)
             loadRefineContext(true)
           }
           break
@@ -1044,6 +1092,9 @@ function Plugin() {
             if (!nextKey || !context?.text) {
               if (!context?.canRefine) {
                 setRefineAnswer('')
+                setAnimatingRefineTarget('')
+                setAnimatingRefineThreadKey(null)
+                setAnimatingRefineTurnIndex(null)
               }
             } else {
               setDisplayedRefineThreadKey(nextKey)
@@ -1057,16 +1108,17 @@ function Plugin() {
           break
         case 'refine-generated':
           setIsGeneratingCustomRefine(false)
-          if (typeof msg.generatedText === 'string') {
-            setRefineAnswer(msg.generatedText)
-          }
           const threadKey = typeof msg.selectionKey === 'string' && msg.selectionKey.trim()
             ? msg.selectionKey
             : (typeof msg.nodeId === 'string' ? msg.nodeId : '')
           if (threadKey && typeof msg.nodeId === 'string' && typeof msg.prompt === 'string' && typeof msg.generatedText === 'string') {
             const nextPromptIndex = refineThreads[threadKey]?.turns.length ?? 0
+            const assistantTurnIndex = nextPromptIndex + 1
             setDisplayedRefineThreadKey(threadKey)
             setRefineScrollTarget({ key: threadKey, index: nextPromptIndex })
+            setAnimatingRefineThreadKey(threadKey)
+            setAnimatingRefineTurnIndex(assistantTurnIndex)
+            setAnimatingRefineTarget(msg.generatedText)
             setRefineThreads(prev => {
               const current = prev[threadKey] ?? {
                 selectionKey: threadKey,
@@ -1074,7 +1126,7 @@ function Plugin() {
                 seedText: typeof msg.seedText === 'string' ? msg.seedText : '',
                 turns: [],
               }
-              return {
+              const nextThreads: Record<string, RefineThreadState> = {
                 ...prev,
                 [threadKey]: {
                   ...current,
@@ -1085,6 +1137,7 @@ function Plugin() {
                   ],
                 },
               }
+              return nextThreads
             })
           }
           setRefinePrompt('')
@@ -1178,6 +1231,9 @@ function Plugin() {
         case 'hard-reset-complete':
           setRefineThreads({})
           setRefineAnswer('')
+          setAnimatingRefineTarget('')
+          setAnimatingRefineThreadKey(null)
+          setAnimatingRefineTurnIndex(null)
           setDisplayedRefineThreadKey(null)
           setRefineScrollTarget(null)
           break
@@ -1190,6 +1246,9 @@ function Plugin() {
           setRefineSelection(null)
           setRefineThreads({})
           setRefineAnswer('')
+          setAnimatingRefineTarget('')
+          setAnimatingRefineThreadKey(null)
+          setAnimatingRefineTurnIndex(null)
           setDisplayedRefineThreadKey(null)
           setRefineScrollTarget(null)
           setTargetFont('Noto Sans')
@@ -1601,9 +1660,9 @@ function Plugin() {
                   </div>
                 ) : activePage === 'refine' ? (
                   <div className="-mx-5 flex min-h-0 flex-1 flex-col">
-                    <div ref={refineScrollRef} className="flex-1 space-y-4 overflow-y-auto scrollbar-none fade-scroll-y px-5 pb-4 pt-1">
+                    <ScrollArea ref={refineScrollRef} className="flex-1" viewportClassName="px-5 pb-3 pt-1">
                       {activeRefineThread && activeRefineThread.turns.length > 0 ? (
-                        <div className="space-y-3">
+                        <div className="space-y-3 pr-2">
                           {activeRefineThread.turns.map((turn, index) => (
                             <div
                               key={`${turn.role}-${index}`}
@@ -1619,18 +1678,31 @@ function Plugin() {
                                     : 'border border-border/80 bg-card text-foreground'
                                 }`}
                               >
-                                <p className="whitespace-pre-wrap break-words">{turn.content}</p>
+                                <p className="whitespace-pre-wrap break-words">
+                                  {turn.role === 'assistant'
+                                    && visibleRefineThreadKey === animatingRefineThreadKey
+                                    && index === animatingRefineTurnIndex
+                                    && animatingRefineTarget
+                                    ? refineAnswer
+                                    : turn.content}
+                                  {turn.role === 'assistant'
+                                    && visibleRefineThreadKey === animatingRefineThreadKey
+                                    && index === animatingRefineTurnIndex
+                                    && animatingRefineTarget ? (
+                                      <span className="ml-0.5 inline-block h-[1em] w-[1px] animate-pulse bg-current align-[-0.12em]" />
+                                    ) : null}
+                                </p>
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : null}
-                    </div>
+                    </ScrollArea>
 
-                    <div className="mt-auto border-t border-border/80 bg-background/95 px-5 pb-2 pt-2 backdrop-blur">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0 space-y-1">
+                    <div className="mt-auto border-t border-border/80 bg-background/95 px-5 py-2 backdrop-blur">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                               <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
                                 {refineSelection?.canRefine
@@ -1680,7 +1752,7 @@ function Plugin() {
                           ) : null}
                         </div>
 
-                        <div className="rounded-[22px] border border-border bg-card p-2.5 shadow-[0_16px_32px_rgba(17,24,39,0.06)]">
+                        <div className="rounded-[22px] border border-border bg-card px-3 py-2 shadow-[0_16px_32px_rgba(17,24,39,0.06)]">
                           <textarea
                             value={refinePrompt}
                             onChange={event => setRefinePrompt(event.target.value)}
@@ -1694,9 +1766,9 @@ function Plugin() {
                             }}
                             rows={1}
                             placeholder='Rewrite, shorten, localize, or explain the selected text.'
-                            className="min-h-[60px] w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground"
+                            className="scrollbar-none min-h-[56px] max-h-[120px] w-full resize-none border-0 bg-transparent py-1 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground"
                           />
-                          <div className="mt-2 flex items-center justify-end pt-2">
+                          <div className="mt-0.5 flex items-center justify-end">
                             <Button
                               className="h-9 w-9 rounded-full p-0 shadow-sm"
                               disabled={isGeneratingCustomRefine || !refinePrompt.trim()}

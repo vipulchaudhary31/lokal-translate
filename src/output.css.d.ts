@@ -131,6 +131,7 @@ declare const styles: {
   readonly "after:left-1/2": string;
   readonly "after:w-1": string;
   readonly "after:w-[2px]": string;
+  readonly "align-[-0.12em]": string;
   readonly "align-[-0.15em]": string;
   readonly "align-middle": string;
   readonly "animate-pulse": string;
@@ -146,6 +147,7 @@ declare const styles: {
   readonly "aria-selected:text-accent-foreground": string;
   readonly "aria-selected:text-muted-foreground": string;
   readonly "aria-selected:text-primary-foreground": string;
+  readonly "ask-scrollbar": string;
   readonly "aspect-square": string;
   readonly "aspect-video": string;
   readonly "auto-rows-min": string;
@@ -162,6 +164,7 @@ declare const styles: {
   readonly "bg-[#F78430]": string;
   readonly "bg-[#FCFBF8]": string;
   readonly "bg-[#FD5C04]": string;
+  readonly "bg-[#a7a7a7]": string;
   readonly "bg-[#b42318]/5": string;
   readonly "bg-[#bf4e30]": string;
   readonly "bg-[#e8e8e8]": string;
@@ -722,6 +725,7 @@ declare const styles: {
   readonly "h-[11.842px]": string;
   readonly "h-[11.84px]": string;
   readonly "h-[116.98%]": string;
+  readonly "h-[11px]": string;
   readonly "h-[12.231px]": string;
   readonly "h-[12.372px]": string;
   readonly "h-[12.591px]": string;
@@ -2015,6 +2019,7 @@ declare const styles: {
   readonly "max-h-40": string;
   readonly "max-h-56": string;
   readonly "max-h-96": string;
+  readonly "max-h-[120px]": string;
   readonly "max-h-[280px]": string;
   readonly "max-h-[300px]": string;
   readonly "max-h-[340px]": string;
@@ -2158,6 +2163,7 @@ declare const styles: {
   readonly "p-3": string;
   readonly "p-4": string;
   readonly "p-6": string;
+  readonly "p-[1px]": string;
   readonly "p-[3px]": string;
   readonly "p-px": string;
   readonly "pb-0": string;
@@ -3342,6 +3348,7 @@ declare const styles: {
   readonly "w-[102px]": string;
   readonly "w-[108px]": string;
   readonly "w-[118px]": string;
+  readonly "w-[11px]": string;
   readonly "w-[122.59%]": string;
   readonly "w-[144px]": string;
   readonly "w-[145px]": string;

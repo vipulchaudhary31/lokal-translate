@@ -9,7 +9,7 @@ export default function () {
 const DEBUG_LOGS = false
 const debugLog: (...args: unknown[]) => void = DEBUG_LOGS ? console.log.bind(console) : () => {}
 const debugWarn: (...args: unknown[]) => void = DEBUG_LOGS ? console.warn.bind(console) : () => {}
-const REFINE_DEBUG = true
+const REFINE_DEBUG = false
 const refineLog: (...args: unknown[]) => void = REFINE_DEBUG ? console.log.bind(console, '[REFINE DEBUG]') : () => {}
 const refineWarn: (...args: unknown[]) => void = REFINE_DEBUG ? console.warn.bind(console, '[REFINE DEBUG]') : () => {}
 
@@ -523,6 +523,64 @@ function readGeminiResponseText(payload: unknown): string {
     if (text) return text
   }
   return ''
+}
+
+function readGeminiFinishReason(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return ''
+  const candidates = (payload as { candidates?: Array<{ finishReason?: unknown }> }).candidates
+  if (!Array.isArray(candidates)) return ''
+  for (const candidate of candidates) {
+    if (typeof candidate?.finishReason === 'string' && candidate.finishReason.trim()) {
+      return candidate.finishReason.trim()
+    }
+  }
+  return ''
+}
+
+function readGeminiUsageMetadata(payload: unknown): { thoughtsTokenCount?: number; candidatesTokenCount?: number } {
+  if (!payload || typeof payload !== 'object') return {}
+  const usageMetadata = (payload as { usageMetadata?: Record<string, unknown> }).usageMetadata
+  if (!usageMetadata || typeof usageMetadata !== 'object') return {}
+
+  const thoughtsTokenCount = typeof usageMetadata.thoughtsTokenCount === 'number'
+    ? usageMetadata.thoughtsTokenCount
+    : undefined
+  const candidatesTokenCount = typeof usageMetadata.candidatesTokenCount === 'number'
+    ? usageMetadata.candidatesTokenCount
+    : undefined
+
+  return { thoughtsTokenCount, candidatesTokenCount }
+}
+
+function endsLikeIncompleteSentence(content: string): boolean {
+  const trimmed = content.trim()
+  if (trimmed.length < 120) return false
+  if (/[.!?…"'”)\]]$/.test(trimmed)) return false
+  return /\b(and|or|to|for|with|that|which|who|whom|whose|because|if|when|while|however|but|like|than|then|such|as|means|is|are|was|were|the|a|an|of|in|on|at)\s*$/i.test(trimmed)
+}
+
+function shouldContinueGeminiAnswer(answer: string, finishReason: string): boolean {
+  const trimmedFinishReason = finishReason.trim().toUpperCase()
+  if (trimmedFinishReason && trimmedFinishReason !== 'STOP') return true
+  return endsLikeIncompleteSentence(answer)
+}
+
+function mergeGeminiContinuation(base: string, continuation: string): string {
+  const left = base.trimEnd()
+  const right = continuation.trimStart()
+  if (!left) return right
+  if (!right) return left
+  if (right.startsWith(left)) return right
+
+  const maxOverlap = Math.min(left.length, right.length, 160)
+  for (let overlap = maxOverlap; overlap >= 12; overlap -= 1) {
+    if (left.slice(-overlap) === right.slice(0, overlap)) {
+      return left + right.slice(overlap)
+    }
+  }
+
+  const needsSpace = !/\s$/.test(left) && !/^[\s,.;:!?)}\]]/.test(right)
+  return needsSpace ? `${left} ${right}` : `${left}${right}`
 }
 
 function cleanRefineCompletion(content: string): string {
@@ -1939,7 +1997,32 @@ async function generateCustomRefineAnswer(
     history: sanitizedHistory,
   })
 
-  const requestBody = {
+  const baseContents = [
+    {
+      role: 'user',
+      parts: [
+        {
+          text: [
+            `Current selection type: ${kind === 'range' ? 'highlighted text inside a layer' : 'full text layer'}.`,
+            `Full parent layer text:\n${(fullLayerText || cleanText).trim()}`,
+            `Current focus text:\n${cleanText}`,
+          ].join('\n\n'),
+        },
+      ],
+    },
+    ...sanitizedHistory.map(turn => ({
+      role: turn.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: turn.content }],
+    })),
+    {
+      role: 'user',
+      parts: [{ text: customPrompt.trim() }],
+    },
+  ] as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>
+
+  const buildRequestBody = (
+    contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>
+  ) => ({
     system_instruction: {
       parts: [
         {
@@ -1956,73 +2039,100 @@ async function generateCustomRefineAnswer(
         },
       ],
     },
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: [
-              `Current selection type: ${kind === 'range' ? 'highlighted text inside a layer' : 'full text layer'}.`,
-              `Full parent layer text:\n${(fullLayerText || cleanText).trim()}`,
-              `Current focus text:\n${cleanText}`,
-            ].join('\n\n'),
-          },
-        ],
-      },
-      ...sanitizedHistory.map(turn => ({
-        role: turn.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: turn.content }],
-      })),
-      {
-        role: 'user',
-        parts: [{ text: customPrompt.trim() }],
-      },
-    ],
+    contents,
     generationConfig: {
       temperature: 0.7,
       topP: 0.95,
       maxOutputTokens: 800,
+      thinkingConfig: {
+        thinkingBudget: 0,
+      },
     },
-  }
-
-  refineLog('custom request', {
-    kind,
-    model: REFINE_MODEL,
-    text: cleanText,
-    prompt: customPrompt,
   })
 
-  await rateLimitBeforeApiCall(session)
-  const response = await fetchWithTimeout(`${GEMINI_GENERATE_CONTENT_URL}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  })
+  const executeGeminiRequest = async (
+    contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
+    requestLabel: 'custom request' | 'custom continuation request'
+  ): Promise<{ answer: string; rawContent: string; finishReason: string }> => {
+    const requestBody = buildRequestBody(contents)
+    refineLog(requestLabel, {
+      kind,
+      model: REFINE_MODEL,
+      text: cleanText,
+      prompt: customPrompt,
+    })
 
-  const responseText = await response.text()
-  refineLog('custom response', {
-    status: response.status,
-    ok: response.ok,
-    body: responseText,
-  })
-  if (!response.ok) {
-    const errMsg = parseGeminiErrorBody(responseText, response.status)
-    throw new Error(errMsg)
+    await rateLimitBeforeApiCall(session)
+    const response = await fetchWithTimeout(`${GEMINI_GENERATE_CONTENT_URL}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    const responseText = await response.text()
+    refineLog('custom response', {
+      status: response.status,
+      ok: response.ok,
+      body: responseText,
+    })
+    if (!response.ok) {
+      const errMsg = parseGeminiErrorBody(responseText, response.status)
+      throw new Error(errMsg)
+    }
+
+    const data = JSON.parse(responseText) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
+      usageMetadata?: { thoughtsTokenCount?: number; candidatesTokenCount?: number }
+    }
+    const rawContent = readGeminiResponseText(data)
+    const answer = sanitizeRefineAnswer(rawContent)
+    const finishReason = readGeminiFinishReason(data)
+    const usageMetadata = readGeminiUsageMetadata(data)
+    refineLog('custom raw content string', JSON.stringify(rawContent))
+    refineLog('custom cleaned answer string', JSON.stringify(answer))
+    refineLog('custom parsed answer', { rawContent, answer, finishReason, usageMetadata })
+
+    return { answer, rawContent, finishReason }
   }
 
-  const data = JSON.parse(responseText) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-  }
-  const rawContent = readGeminiResponseText(data)
-  const answer = sanitizeRefineAnswer(rawContent)
-  refineLog('custom raw content string', JSON.stringify(rawContent))
-  refineLog('custom cleaned answer string', JSON.stringify(answer))
-  refineLog('custom parsed answer', { rawContent, answer })
+  const firstPass = await executeGeminiRequest(baseContents, 'custom request')
+  let finalAnswer = firstPass.answer || firstPass.rawContent
 
-  return answer || rawContent
+  if (finalAnswer && shouldContinueGeminiAnswer(finalAnswer, firstPass.finishReason)) {
+    refineWarn('custom answer looks incomplete, requesting continuation', {
+      finishReason: firstPass.finishReason,
+      answerPreview: finalAnswer.slice(-80),
+    })
+
+    const continuationPass = await executeGeminiRequest(
+      [
+        ...baseContents,
+        {
+          role: 'model',
+          parts: [{ text: finalAnswer }],
+        },
+        {
+          role: 'user',
+          parts: [
+            {
+              text: 'Continue exactly from where you stopped. Do not repeat or restart. Return only the missing continuation in the same tone.',
+            },
+          ],
+        },
+      ],
+      'custom continuation request'
+    )
+
+    const continuation = continuationPass.answer || continuationPass.rawContent
+    if (continuation) {
+      finalAnswer = mergeGeminiContinuation(finalAnswer, continuation)
+    }
+  }
+
+  return finalAnswer
 }
 
 // Function to check if a node or any of its parents should be excluded from translation (DND)
@@ -2329,6 +2439,12 @@ async function translateText(
       model: config.model,
       mode: config.mode,
       numerals_format: 'international',
+      ...(config.model === 'sarvam-translate:v1'
+        ? {
+            speaker_gender: 'Male',
+            enable_preprocessing: true,
+          }
+        : {}),
       ...(config.outputScript ? { output_script: config.outputScript } : {}),
     }
     

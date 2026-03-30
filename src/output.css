@@ -6787,6 +6787,9 @@
   .h-\[11\.842px\] {
     height: 11.842px;
   }
+  .h-\[11px\] {
+    height: 11px;
+  }
   .h-\[12\.95px\] {
     height: 12.95px;
   }
@@ -7075,6 +7078,9 @@
   .max-h-\[88vh\] {
     max-height: 88vh;
   }
+  .max-h-\[120px\] {
+    max-height: 120px;
+  }
   .max-h-\[280px\] {
     max-height: 280px;
   }
@@ -7209,6 +7215,9 @@
   }
   .w-\[2px\] {
     width: 2px;
+  }
+  .w-\[11px\] {
+    width: 11px;
   }
   .w-\[15px\] {
     width: 15px;
@@ -8108,6 +8117,9 @@
   .bg-\[\#FD5C04\] {
     background-color: #FD5C04;
   }
+  .bg-\[\#a7a7a7\] {
+    background-color: #a7a7a7;
+  }
   .bg-\[\#b42318\]\/5 {
     background-color: color-mix(in oklab, #b42318 5%, transparent);
   }
@@ -8466,6 +8478,9 @@
   .p-6 {
     padding: calc(var(--spacing) * 6);
   }
+  .p-\[1px\] {
+    padding: 1px;
+  }
   .p-\[3px\] {
     padding: 3px;
   }
@@ -8651,6 +8666,9 @@
   }
   .text-left {
     text-align: left;
+  }
+  .align-\[-0\.12em\] {
+    vertical-align: -0.12em;
   }
   .align-\[-0\.15em\] {
     vertical-align: -0.15em;
@@ -12225,6 +12243,28 @@
   .fade-scroll-x {
     -webkit-mask-image: none;
     mask-image: none;
+  }
+  .ask-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 168, 168, 0.85) transparent;
+  }
+  .ask-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .ask-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ask-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(168, 168, 168, 0.85);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  .ask-scrollbar::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
   }
 }
 @property --tw-translate-x {
