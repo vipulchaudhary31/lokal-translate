@@ -1203,11 +1203,10 @@ function Plugin() {
           break
         case 'refine-selection-changed':
           if (page === 'refine') {
-            setRefineAnswer('')
             setAnimatingRefineTarget('')
             setAnimatingRefineThreadKey(null)
             setAnimatingRefineTurnIndex(null)
-            loadRefineContext(true)
+            loadRefineContext(false)
           }
           break
         case 'refine-context':
@@ -1215,17 +1214,29 @@ function Plugin() {
             const context = msg.context && typeof msg.context === 'object' ? msg.context as RefineSelectionState : null
             setRefineSelection(context)
             const nextKey = getRefineThreadKey(context)
+            const existingThread = nextKey ? refineThreads[nextKey] ?? null : null
+            const displayedThread = displayedRefineThreadKey ? refineThreads[displayedRefineThreadKey] ?? null : null
+            const sameDisplayedNode =
+              Boolean(context?.nodeId && displayedThread && displayedThread.nodeId === context.nodeId)
+
             if (!nextKey || !context?.text) {
-              if (!context?.canRefine) {
+              // Preserve the last visible conversation when the active text range collapses
+              // or selection temporarily becomes non-refinable.
+              if (displayedThread) {
+                setRefineAnswer(displayedThread.turns[displayedThread.turns.length - 1]?.content || '')
+              } else {
                 setRefineAnswer('')
                 setAnimatingRefineTarget('')
                 setAnimatingRefineThreadKey(null)
                 setAnimatingRefineTurnIndex(null)
               }
             } else {
-              setDisplayedRefineThreadKey(nextKey)
-              const existingThread = refineThreads[nextKey]
-              setRefineAnswer(existingThread?.turns[existingThread.turns.length - 1]?.content || '')
+              if (context.kind === 'node' && sameDisplayedNode) {
+                setRefineAnswer(displayedThread?.turns[displayedThread.turns.length - 1]?.content || '')
+              } else {
+                setDisplayedRefineThreadKey(nextKey)
+                setRefineAnswer(existingThread?.turns[existingThread.turns.length - 1]?.content || '')
+              }
             }
           }
           break
@@ -1407,7 +1418,19 @@ function Plugin() {
 
   const activePage = page
   const activeRefineSelectionKey = getRefineThreadKey(refineSelection)
-  const visibleRefineThreadKey = activeRefineSelectionKey ?? displayedRefineThreadKey
+  const displayedRefineThread = displayedRefineThreadKey ? refineThreads[displayedRefineThreadKey] ?? null : null
+  const shouldPreferDisplayedRefineThread =
+    Boolean(
+      displayedRefineThread &&
+      (
+        !activeRefineSelectionKey ||
+        (refineSelection?.kind === 'node' && refineSelection.nodeId && displayedRefineThread.nodeId === refineSelection.nodeId)
+      )
+    )
+  const visibleRefineThreadKey =
+    shouldPreferDisplayedRefineThread
+      ? displayedRefineThreadKey
+      : activeRefineSelectionKey ?? displayedRefineThreadKey
   const activeRefineThread = visibleRefineThreadKey ? refineThreads[visibleRefineThreadKey] ?? null : null
   const hasActiveRefineThread = Boolean(activeRefineThread && activeRefineThread.turns.length > 0)
   const isApiKeyRequired = activePage === 'apiKey' && !apiKey.trim()

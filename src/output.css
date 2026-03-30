@@ -220,6 +220,9 @@
   .invisible {
     visibility: hidden;
   }
+  .visible {
+    visibility: visible;
+  }
   .sr-only {
     position: absolute;
     width: 1px;
@@ -8087,6 +8090,12 @@
   }
   .border-foreground {
     border-color: var(--foreground);
+  }
+  .border-foreground\/12 {
+    border-color: var(--foreground);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--foreground) 12%, transparent);
+    }
   }
   .border-foreground\/20 {
     border-color: var(--foreground);

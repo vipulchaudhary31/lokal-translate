@@ -270,6 +270,7 @@ declare const styles: {
   readonly "border-destructive/30": string;
   readonly "border-dotted": string;
   readonly "border-foreground": string;
+  readonly "border-foreground/12": string;
   readonly "border-foreground/20": string;
   readonly "border-foreground/30": string;
   readonly "border-input": string;
@@ -3361,6 +3362,7 @@ declare const styles: {
   readonly "uppercase": string;
   readonly "via-[#f5efe0]": string;
   readonly "via-background/88": string;
+  readonly "visible": string;
   readonly "w-(--sidebar-width)": string;
   readonly "w-0": string;
   readonly "w-1": string;
