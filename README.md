@@ -1,6 +1,6 @@
 # Lokal Translate
 
-A Figma plugin for translating selected copy, refining text, and swapping fonts without leaving your design file.
+A Figma plugin for translating selected copy in Indian languages, refining text, and swapping fonts without leaving your design file.
 
 It is built around three workflows inside the plugin: `Translate`, `Ask`, and `Swap`.
 
