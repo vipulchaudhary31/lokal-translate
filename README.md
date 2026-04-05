@@ -1,14 +1,12 @@
 # Lokal Translate
 
-A Figma plugin for translating interface copy into Indian languages without leaving your design file.
+A Figma plugin for translating selected copy, refining text, and swapping fonts without leaving your design file.
 
-It supports multi-frame translation, language-aware font replacement, transliteration, and copy refinement. Sarvam powers translation and transliteration, and a small local backend keeps API keys out of the plugin bundle for refine requests.
+It is built around three workflows inside the plugin: `Translate`, `Ask`, and `Swap`.
 
 ## Demo
 
-[![Lokal Translate demo preview](./assets/demo-preview.gif)](./demo.mp4)
-
-[Watch the full demo video](./demo.mp4)
+[Watch the demo video](./demo.mp4)
 
 ## Download
 
@@ -29,32 +27,36 @@ Then import the plugin into Figma Desktop:
 
 > Requires Node.js 18 or later and Figma Desktop.
 
+## Setup
+
+On first use, add your API keys from the plugin UI:
+
+- Sarvam API key for translation, transliteration, and bulk translate
+- Gemini API key for `Ask`
+
+The keys are saved in Figma client storage for the plugin.
+
 ## What It Does
 
-- Translates selected frames in one pass
+- Translates selected frames, groups, sections, components, instances, and text layers
+- Can also translate only a highlighted text range inside a text layer
 - Supports English, Hindi, Tamil, Telugu, Kannada, Malayalam, Marathi, Bengali, Punjabi, and Gujarati
-- Applies language-specific fonts after translation
-- Offers formal, classic, modern, and transliteration output styles
-- Refines selected copy through a chat-style workflow
+- Offers `Default`, `Formal`, `Classic`, `Modern`, and `Translit` translation styles
+- Creates bulk language versions from the current selection
+- Refines selected copy in the `Ask` tab and can apply the result back into the layer
+- Swaps selected text to a target font in the `Swap` tab
+- Saves per-language font preferences
+- Saves style mappings so translated text can match target text styles in the file
+- Caches translations, preferences, and refine history in plugin storage
 
-## Local Backend
+## Notes
 
-The backend is optional for UI work, but required for live translation, transliteration, and refine flows.
-
-Create `backend/.env` with:
-
-```env
-SARVAM_API_KEY=your_key_here
-GEMINI_API_KEY=your_key_here
-```
-
-Then start the server:
-
-```bash
-node backend/server.mjs
-```
-
-The backend runs on `http://127.0.0.1:8787`.
+- `Bulk Translate` works with a saved subset of Indian languages that you can configure in the plugin.
+- `Assume English` skips source-language detection and is useful when your selected text is already English.
+- Rename a layer or container to `dnd` to keep the original text and only apply target font or style mapping.
+- Rename a layer or container to `lma` to leave it fully untouched.
+- `Ask` works on one text layer or one highlighted text range at a time.
+- Style swapping after translation is limited to single-style text layers when restyling already translated text.
 
 ## Development
 
@@ -68,9 +70,4 @@ Main files:
 
 - `src/main.ts` for plugin logic
 - `src/ui.tsx` for the interface
-- `backend/server.mjs` for secure API proxying
-
-## Notes
-
-- The plugin uses the Figma Plugin API with dynamic page access.
-- Network access is limited to Sarvam, Gemini, and Google Fonts as declared in `manifest.json`.
+- `manifest.json` for Figma permissions and network access
