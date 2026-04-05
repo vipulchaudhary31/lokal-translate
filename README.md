@@ -4,20 +4,11 @@ A Figma plugin for translating selected copy, refining text, and swapping fonts 
 
 It is built around three workflows inside the plugin: `Translate`, `Ask`, and `Swap`.
 
-## Demo
-
-[Watch the demo video](./demo.mp4)
-
 ## Download
 
 Option 1 — Follow the [plugin install and testing guide](https://docs.google.com/document/d/1Gp1UgA_OcZsrs2bpv9uPqmHFBU1xWWMvYEkp5FndL9M/edit?usp=sharing).
 
-Option 2 — Build and load it locally:
-
-```bash
-npm install
-npm run build
-```
+Option 2 — Import the built plugin from this repo:
 
 Then import the plugin into Figma Desktop:
 
@@ -25,7 +16,7 @@ Then import the plugin into Figma Desktop:
 2. Go to `Plugins` > `Development` > `Import plugin from manifest...`
 3. Choose `manifest.json`.
 
-> Requires Node.js 18 or later and Figma Desktop.
+> Requires Figma Desktop.
 
 ## Setup
 
@@ -60,9 +51,11 @@ The keys are saved in Figma client storage for the plugin.
 
 ## Development
 
-Use watch mode while working on the plugin:
+If you want to rebuild or work on the plugin locally:
 
 ```bash
+npm install
+npm run build
 npm run watch
 ```
 
