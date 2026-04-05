@@ -4,7 +4,11 @@ A Figma plugin for translating interface copy into Indian languages without leav
 
 It supports multi-frame translation, language-aware font replacement, transliteration, and copy refinement. Sarvam powers translation and transliteration, and a small local backend keeps API keys out of the plugin bundle for refine requests.
 
-demo.mp4
+## Demo
+
+[![Lokal Translate demo preview](./assets/demo-preview.gif)](./demo.mp4)
+
+[Watch the full demo video](./demo.mp4)
 
 ## Download
 
